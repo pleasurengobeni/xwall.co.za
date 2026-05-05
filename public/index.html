@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="Ambient wallpaper with music — xwall" />
+  <title>xwall</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+  <!-- ══════════════════════ HOME VIEW ══════════════════════ -->
+  <div id="view-home" class="view">
+    <div class="home-bg" aria-hidden="true"></div>
+
+    <main class="home-content">
+
+      <header class="home-header">
+        <h1 class="home-logo">xwall</h1>
+        <p class="home-tagline">choose your space</p>
+      </header>
+
+      <!-- Wallpaper mode cards -->
+      <nav class="wp-cards" aria-label="Select a mode">
+        <button class="wpc active" data-wallpaper="fireplace" type="button">
+          <div class="wpc-preview wpc-fireplace" aria-hidden="true"></div>
+          <span class="wpc-icon">🔥</span>
+          <span class="wpc-name">Fireplace</span>
+        </button>
+        <button class="wpc" data-wallpaper="rain" type="button">
+          <div class="wpc-preview wpc-rain" aria-hidden="true"></div>
+          <span class="wpc-icon">🌧️</span>
+          <span class="wpc-name">Rain</span>
+        </button>
+        <button class="wpc" data-wallpaper="river" type="button">
+          <div class="wpc-preview wpc-river" aria-hidden="true"></div>
+          <span class="wpc-icon">🏞️</span>
+          <span class="wpc-name">River</span>
+        </button>
+        <button class="wpc" data-wallpaper="scenic" type="button">
+          <div class="wpc-preview wpc-scenic" aria-hidden="true"></div>
+          <span class="wpc-icon">🌄</span>
+          <span class="wpc-name">Scenic</span>
+        </button>
+        <button class="wpc" data-wallpaper="clock" type="button">
+          <div class="wpc-preview wpc-clock" aria-hidden="true"></div>
+          <span class="wpc-icon">🕐</span>
+          <span class="wpc-name">Clock</span>
+        </button>
+      </nav>
+
+      <!-- Video library — curated thumbnails for the selected category -->
+      <div id="video-library" class="video-library hidden" aria-label="Select a background video"></div>
+
+      <!-- Playlist URL -->
+      <div class="music-section">
+        <div class="playlist-input-row">
+          <input
+            id="playlist-url"
+            class="playlist-url-input"
+            type="url"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Paste a YouTube or Spotify playlist link… (optional)"
+            aria-label="Playlist URL"
+          />
+          <button id="playlist-clear" class="playlist-clear hidden" type="button" aria-label="Clear URL">✕</button>
+        </div>
+        <p id="playlist-hint" class="playlist-hint">Supports YouTube &amp; Spotify playlists</p>
+        <!-- Saved playlists shown when signed in with Google -->
+        <div id="saved-playlists" class="saved-playlists hidden"></div>
+      </div>
+
+      <!-- Enter -->
+      <button id="launch-btn" class="launch-btn" type="button">
+        Enter
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+          <polyline points="12 5 19 12 12 19"/>
+        </svg>
+      </button>
+
+      <!-- Optional auth -->
+      <div class="home-auth-row">
+        <p class="home-auth-label">Sign in to load your saved music playlists</p>
+        <div id="home-login-buttons" class="home-auth-buttons">
+          <a href="/auth/google" class="login-btn yt-btn" aria-label="Sign in with YouTube">
+            <svg class="login-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.54 3.5 12 3.5 12 3.5s-7.54 0-9.38.55A3.02 3.02 0 0 0 .5 6.19C0 8.04 0 12 0 12s0 3.96.5 5.81a3.02 3.02 0 0 0 2.12 2.14C4.46 20.5 12 20.5 12 20.5s7.54 0 9.38-.55a3.02 3.02 0 0 0 2.12-2.14C24 15.96 24 12 24 12s0-3.96-.5-5.81zM9.75 15.02V8.98L15.5 12l-5.75 3.02z"/>
+            </svg>
+            YouTube
+          </a>
+          <a href="/auth/spotify" class="login-btn sp-btn" aria-label="Sign in with Spotify">
+            <svg class="login-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+            </svg>
+            Spotify
+          </a>
+        </div>
+        <div id="home-user-info" class="home-user-info hidden">
+          <img id="home-user-photo" class="home-user-photo" src="" alt="" width="28" height="28" />
+          <span id="home-user-name" class="home-user-name"></span>
+          <button id="home-logout-btn" class="home-logout-btn" type="button">Sign out</button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ══════════════════════ MAIN VIEW ══════════════════════ -->
+  <div id="view-main" class="view hidden">
+
+    <!-- Ambient background -->
+    <div id="bg-layer" aria-hidden="true">
+      <div id="css-bg" class="css-bg fireplace"></div>
+      <iframe
+        id="bg-video"
+        class="bg-video"
+        src=""
+        title="Ambient background video"
+        frameborder="0"
+        allow="autoplay; encrypted-media"
+        loading="lazy"
+      ></iframe>
+      <div id="rain-canvas-host"></div>
+      <div class="vignette"></div>
+    </div>
+
+    <!-- Clock mode -->
+    <div id="clock-display" class="clock-display hidden" role="timer" aria-live="polite" aria-atomic="true">
+      <div id="clock-time" class="clock-time">00:00:00</div>
+      <div id="clock-date" class="clock-date">Monday, January 1 2026</div>
+      <div id="clock-weather" class="clock-weather hidden"></div>
+    </div>
+
+    <!-- Back — auto-hides, shows on hover/touch -->
+    <button id="back-btn" class="back-btn" type="button" aria-label="Back to selection">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+
+    <!-- Transport — only shown when a playlist is loaded -->
+    <div id="transport" class="transport" role="region" aria-label="Music controls">
+      <div class="transport-inner">
+        <p id="transport-title" class="transport-title"></p>
+        <div class="transport-controls" role="group" aria-label="Playback">
+          <button id="tp-prev" class="tp-btn" type="button" aria-label="Previous" title="Previous">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+          </button>
+          <button id="tp-play" class="tp-btn tp-play-btn" type="button" aria-label="Play / Pause" title="Play / Pause">
+            <svg class="icon-play"  viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <button id="tp-stop" class="tp-btn" type="button" aria-label="Stop" title="Stop">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+          </button>
+          <button id="tp-next" class="tp-btn" type="button" aria-label="Next" title="Next">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm8.5-6v6h2V6h-2v6z"/></svg>
+          </button>
+        </div>
+      </div>
+      <!-- Spotify compact embed (has its own playback bar) -->
+      <iframe
+        id="sp-embed"
+        class="sp-embed hidden"
+        src=""
+        frameborder="0"
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+        loading="lazy"
+      ></iframe>
+    </div>
+
+    <!-- YouTube IFrame API hidden audio player — outside transport to avoid overflow clipping -->
+    <div id="yt-player-host" aria-hidden="true"></div>
+
+    <!-- Wake-lock indicator -->
+    <div id="status-bar" class="status-bar" role="status" aria-live="polite">
+      <span id="wake-indicator" class="status-icon" title="Screen keep-awake">☀️</span>
+    </div>
+
+  </div>
+
+  <script src="/js/wakelock.js"></script>
+  <script src="/js/rain.js"></script>
+  <script src="/js/clock.js"></script>
+  <script src="/js/wallpaper.js"></script>
+  <script src="/js/player.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
