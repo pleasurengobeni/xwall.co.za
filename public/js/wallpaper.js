@@ -30,10 +30,16 @@ const Wallpaper = (() => {
   let _currentVideoId  = null;
   let _candidateIds    = [];
   let _muteBackground  = false;
+  let _wantsAudibleBackground = false;
   let _ytPlayer        = null;
   let fadeTimer        = null;
   let _loadToken       = 0;
   let _ytApiReady      = !!(window.YT && window.YT.Player);
+  let _startupRecoveryTimer = null;
+  let _awaitingUserUnmute = false;
+  let _userUnmuteHandler = null;
+
+  const BG_STARTUP_RECOVERY_MS = 4500;
 
   function _ensureYtApi() {
     if (_ytApiReady || (window.YT && window.YT.Player)) {
@@ -66,11 +72,53 @@ const Wallpaper = (() => {
   }
 
   function _destroyPlayer() {
+    _clearStartupRecoveryTimer();
+    _clearUserUnmuteListeners();
+    _awaitingUserUnmute = false;
     if (_ytPlayer) {
       try { _ytPlayer.destroy(); } catch (_) {}
       _ytPlayer = null;
     }
     bgVideo.innerHTML = '';
+  }
+
+  function _clearStartupRecoveryTimer() {
+    if (_startupRecoveryTimer) {
+      clearTimeout(_startupRecoveryTimer);
+      _startupRecoveryTimer = null;
+    }
+  }
+
+  function _clearUserUnmuteListeners() {
+    if (!_userUnmuteHandler) return;
+    ['pointerdown', 'touchstart', 'keydown'].forEach((evt) => {
+      document.removeEventListener(evt, _userUnmuteHandler);
+    });
+    _userUnmuteHandler = null;
+  }
+
+  function _attemptAudibleBackgroundFromGesture() {
+    if (!_wantsAudibleBackground || !_ytPlayer) return;
+    try {
+      _ytPlayer.unMute();
+      _ytPlayer.setVolume(100);
+      _ytPlayer.playVideo();
+    } catch (_) {}
+
+    const muted = typeof _ytPlayer.isMuted === 'function' ? _ytPlayer.isMuted() : false;
+    if (!muted) {
+      _awaitingUserUnmute = false;
+      _clearUserUnmuteListeners();
+    }
+  }
+
+  function _registerUserUnmuteListeners() {
+    if (_awaitingUserUnmute) return;
+    _awaitingUserUnmute = true;
+    _userUnmuteHandler = () => _attemptAudibleBackgroundFromGesture();
+    ['pointerdown', 'touchstart', 'keydown'].forEach((evt) => {
+      document.addEventListener(evt, _userUnmuteHandler, { passive: true });
+    });
   }
 
   // ── Set a wallpaper mode ──────────────────────────────────────────────────
@@ -84,6 +132,7 @@ const Wallpaper = (() => {
     _currentVideoId = vid;
     _candidateIds   = candidates.length ? candidates : [VIDEO_IDS[mode]].filter(Boolean);
     _muteBackground = Boolean(options.muted);
+    _wantsAudibleBackground = !_muteBackground;
 
     // Persist preference
     try { localStorage.setItem('xwall_mode', mode); } catch (_) {}
@@ -100,6 +149,7 @@ const Wallpaper = (() => {
     Clock.start();
     bgVideo.classList.remove('loaded');
     clearTimeout(fadeTimer);
+    _clearStartupRecoveryTimer();
     _destroyPlayer();
     cssBg.className = 'css-bg clock-bg';
   }
@@ -119,6 +169,7 @@ const Wallpaper = (() => {
 
     bgVideo.classList.remove('loaded');
     _destroyPlayer();
+    _clearStartupRecoveryTimer();
     clearTimeout(fadeTimer);
 
     const token = ++_loadToken;
@@ -156,13 +207,18 @@ const Wallpaper = (() => {
       events: {
         onReady: (event) => {
           if (token !== _loadToken) return;
-          if (_muteBackground) {
-            event.target.mute();
-          } else {
-            event.target.unMute();
-            event.target.setVolume(100);
-          }
+          // Start muted for reliable autoplay, then unmute when allowed.
+          event.target.mute();
           event.target.playVideo();
+
+          _clearStartupRecoveryTimer();
+          _startupRecoveryTimer = setTimeout(() => {
+            if (token !== _loadToken) return;
+            if (bgVideo.classList.contains('loaded')) return;
+            _destroyPlayer();
+            _tryLoadCandidate(mode, candidates, token);
+          }, BG_STARTUP_RECOVERY_MS);
+
           clearTimeout(fadeTimer);
           fadeTimer = setTimeout(() => bgVideo.classList.add('loaded'), 700);
         },
@@ -170,6 +226,16 @@ const Wallpaper = (() => {
           if (token !== _loadToken) return;
           if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING) {
             bgVideo.classList.add('loaded');
+            _clearStartupRecoveryTimer();
+          }
+
+          if (event.data === YT.PlayerState.PLAYING && _wantsAudibleBackground) {
+            _attemptAudibleBackgroundFromGesture();
+            const player = event.target || _ytPlayer;
+            const muted = player && typeof player.isMuted === 'function' ? player.isMuted() : false;
+            if (muted) {
+              _registerUserUnmuteListeners();
+            }
           }
         },
         onError: () => {
