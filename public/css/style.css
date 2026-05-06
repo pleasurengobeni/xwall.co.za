@@ -803,6 +803,15 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   .wpc        { width: 80px; }
   .wpc-icon   { font-size: 1rem; }
   .wpc-name   { font-size: 0.6rem; }
+  .xrail {
+    grid-template-columns: 28px minmax(0, 1fr) 28px;
+    gap: 0.25rem;
+  }
+  .xrail-btn {
+    width: 28px;
+    height: 84px;
+    font-size: 0.9rem;
+  }
 }
 
 @media (max-height: 600px) {
@@ -823,26 +832,55 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 
 .video-library {
   width: 100%;
-  max-width: 580px;
+  max-width: 700px;
   min-height: 132px;
   margin-top: 0.25rem;
   position: relative;
   z-index: 5;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.14) transparent;
+  overflow: visible;
+  scrollbar-width: none;
   padding: 0.15rem 0 0.3rem;
   animation: homeReveal 0.35s var(--ease-smooth) both;
 }
-.video-library::-webkit-scrollbar { height: 4px; }
-.video-library::-webkit-scrollbar-track { background: transparent; }
-.video-library::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 2px; }
+.video-library::-webkit-scrollbar { display: none; }
+
+.xrail {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.xrail-btn {
+  width: 34px;
+  height: 96px;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.86);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.xrail-btn:hover {
+  transform: scale(1.03);
+  background: rgba(255,255,255,0.11);
+  border-color: rgba(255,255,255,0.24);
+}
+
+.xrail-track {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.xrail-track::-webkit-scrollbar { display: none; }
 
 .vlib-scroll {
   display: flex;
   gap: 0.65rem;
   min-height: 120px;
-  padding: 0.15rem 0;
+  padding: 0.15rem 0.1rem;
   width: max-content;
 }
 
@@ -949,10 +987,11 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   display: flex;
   gap: 0.7rem;
   overflow-x: auto;
-  padding: 0.15rem 0 0.2rem;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.1) transparent;
+  padding: 0.15rem 0.1rem 0.2rem;
+  scrollbar-width: none;
 }
+
+.saved-playlists-list::-webkit-scrollbar { display: none; }
 
 .spl-item {
   display: flex;

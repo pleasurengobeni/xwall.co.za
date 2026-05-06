@@ -140,7 +140,9 @@
 
     const activeId = selectedVideoIds[mode];
     videoLibraryEl.innerHTML =
-      `<div class="vlib-scroll">${
+      `<div class="xrail" data-step="252">` +
+      `<button class="xrail-btn xrail-btn-left" type="button" aria-label="Scroll left">&lt;</button>` +
+      `<div class="xrail-track vlib-scroll">${
         videos.map((v) => {
           const title = _escapeHtml(v.title);
           const meta = _escapeHtml(v.durationLabel || '30+ min');
@@ -154,8 +156,11 @@
             `</button>`
           );
         }).join('')
-      }</div>`;
+      }</div>` +
+      `<button class="xrail-btn xrail-btn-right" type="button" aria-label="Scroll right">&gt;</button>` +
+      `</div>`;
     videoLibraryEl.classList.remove('hidden');
+    _wireHorizontalRail(videoLibraryEl);
 
     videoLibraryEl.querySelectorAll('.vlib-card').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -210,6 +215,18 @@
       .catch(() => {
         // Silent fallback to bundled list when suggestions cannot be fetched.
       });
+  }
+
+  function _wireHorizontalRail(rootEl) {
+    const rail = rootEl.querySelector('.xrail');
+    const track = rootEl.querySelector('.xrail-track');
+    const left = rootEl.querySelector('.xrail-btn-left');
+    const right = rootEl.querySelector('.xrail-btn-right');
+    if (!rail || !track || !left || !right) return;
+
+    const step = parseInt(rail.dataset.step || '220', 10);
+    left.addEventListener('click', () => track.scrollBy({ left: -step, behavior: 'smooth' }));
+    right.addEventListener('click', () => track.scrollBy({ left: step, behavior: 'smooth' }));
   }
 
   function _orderedVideoIdsForMode(mode) {
@@ -272,7 +289,9 @@
       const providerLabel = authUser?.provider === 'spotify' ? 'Spotify playlists' : 'YouTube playlists';
       savedPlaylistsEl.innerHTML =
         `<p class="saved-playlists-label">${providerLabel}</p>` +
-        `<div class="saved-playlists-list">${
+        `<div class="xrail" data-step="340">` +
+        `<button class="xrail-btn xrail-btn-left" type="button" aria-label="Scroll playlists left">&lt;</button>` +
+        `<div class="xrail-track saved-playlists-list">${
           list.map((pl) =>
             `<button class="spl-item" data-id="${pl.id}" data-provider="${pl.provider}" type="button">` +
             (pl.image
@@ -285,8 +304,11 @@
             `<span class="spl-badge ${pl.provider === 'spotify' ? 'spl-badge-sp' : 'spl-badge-yt'}">${pl.provider === 'spotify' ? 'Spotify' : 'YouTube'}</span>` +
             `</button>`
           ).join('')
-        }</div>`;
+        }</div>` +
+        `<button class="xrail-btn xrail-btn-right" type="button" aria-label="Scroll playlists right">&gt;</button>` +
+        `</div>`;
       savedPlaylistsEl.classList.remove('hidden');
+      _wireHorizontalRail(savedPlaylistsEl);
       savedPlaylistsEl.querySelectorAll('.spl-item').forEach((btn) => {
         btn.addEventListener('click', () => {
           savedPlaylistsEl.querySelectorAll('.spl-item').forEach((b) => b.classList.remove('active'));
@@ -365,6 +387,7 @@
     viewHome.classList.remove('hidden');
 
     Player.stop();
+    if (Wallpaper && typeof Wallpaper.stop === 'function') Wallpaper.stop();
     Clock.stop();
     Rain.stop();
     WakeLock.release();

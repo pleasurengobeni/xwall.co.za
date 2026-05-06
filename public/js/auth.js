@@ -46,6 +46,16 @@ const Auth = (() => {
     popup.focus();
   }
 
+  function _closeAuthPopup() {
+    try { window.close(); } catch (_) {}
+    setTimeout(() => {
+      if (!window.closed) {
+        try { window.open('', '_self'); } catch (_) {}
+        try { window.close(); } catch (_) {}
+      }
+    }, 80);
+  }
+
   // ── Check session status ──────────────────────────────────────────────────
   async function check() {
     try {
@@ -117,9 +127,15 @@ const Auth = (() => {
 
   // ── Handle redirect from OAuth (e.g. ?auth=success) ──────────────────────
   const params = new URLSearchParams(window.location.search);
-  if (window.opener && (params.has('auth') || params.has('error'))) {
-    // When OAuth happens inside a popup, notify the opener and close.
+  if (params.has('auth') || params.has('error')) {
+    // Remove OAuth marker params without touching other URL query params.
+    params.delete('auth');
+    params.delete('error');
+    const qs = params.toString();
+    const cleaned = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
+
     if (window.opener && !window.opener.closed) {
+      // Preferred path: notify opener and let it refresh auth status.
       window.opener.postMessage(
         {
           type: 'xwall:auth',
@@ -127,17 +143,17 @@ const Auth = (() => {
         },
         window.location.origin
       );
+
+      // Safari fallback: refresh opener location to the original page.
+      try {
+        window.opener.location.href = cleaned;
+        window.opener.focus();
+      } catch (_) {}
+
+      _closeAuthPopup();
+      return;
     }
 
-    window.close();
-  }
-
-  if (params.has('auth') || params.has('error')) {
-    // Remove OAuth marker params without touching other URL query params.
-    params.delete('auth');
-    params.delete('error');
-    const qs = params.toString();
-    const cleaned = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
     window.history.replaceState({}, '', cleaned);
   }
 

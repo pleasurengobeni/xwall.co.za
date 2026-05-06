@@ -275,5 +275,12 @@ const Wallpaper = (() => {
     _ensurePlayerHost();
   }
 
-  return { init, set, current: () => currentMode };
+  function stop() {
+    _loadToken += 1;
+    clearTimeout(fadeTimer);
+    bgVideo.classList.remove('loaded');
+    _destroyPlayer();
+  }
+
+  return { init, set, stop, current: () => currentMode };
 })();
