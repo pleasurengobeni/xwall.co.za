@@ -25,6 +25,7 @@ const Wallpaper = (() => {
 
   const bgVideo    = document.getElementById('bg-video');
   const cssBg      = document.getElementById('css-bg');
+  const BG_PLAYER_HOST_ID = 'bg-video-player';
 
   let currentMode      = null;
   let _currentVideoId  = null;
@@ -79,7 +80,16 @@ const Wallpaper = (() => {
       try { _ytPlayer.destroy(); } catch (_) {}
       _ytPlayer = null;
     }
-    bgVideo.innerHTML = '';
+    bgVideo.innerHTML = `<div id="${BG_PLAYER_HOST_ID}"></div>`;
+  }
+
+  function _ensurePlayerHost() {
+    let host = document.getElementById(BG_PLAYER_HOST_ID);
+    if (!host) {
+      bgVideo.innerHTML = `<div id="${BG_PLAYER_HOST_ID}"></div>`;
+      host = document.getElementById(BG_PLAYER_HOST_ID);
+    }
+    return host;
   }
 
   function _clearStartupRecoveryTimer() {
@@ -186,7 +196,7 @@ const Wallpaper = (() => {
     if (!nextId || token !== _loadToken) return;
 
     _currentVideoId = nextId;
-    bgVideo.innerHTML = '';
+    _ensurePlayerHost();
 
     // Guard against cases where the iframe initializes but never emits onReady.
     _clearStartupRecoveryTimer();
@@ -197,7 +207,7 @@ const Wallpaper = (() => {
       _tryLoadCandidate(mode, candidates, token);
     }, BG_STARTUP_RECOVERY_MS);
 
-    _ytPlayer = new YT.Player('bg-video', {
+    _ytPlayer = new YT.Player(BG_PLAYER_HOST_ID, {
       videoId: nextId,
       width: '100%',
       height: '100%',
@@ -261,7 +271,9 @@ const Wallpaper = (() => {
 
   // ── Init ──────────────────────────────────────────────────────────────────
   // No-op: mode selection is handled by app.js home view before entering main
-  function init() {}
+  function init() {
+    _ensurePlayerHost();
+  }
 
   return { init, set, current: () => currentMode };
 })();
