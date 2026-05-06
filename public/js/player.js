@@ -27,8 +27,6 @@ const Player = (() => {
   let _contextTitle = '';
   let _ytRecoverTimer = null;
   let _ytSkipAttempts = 0;
-
-  const YT_STARTUP_RECOVERY_MS = 3500;
   const YT_MAX_SKIP_ATTEMPTS = 6;
 
   // ── YouTube IFrame API loader ─────────────────────────────────────────────
@@ -85,19 +83,6 @@ const Player = (() => {
     }
   }
 
-  function _scheduleYtStartupRecovery() {
-    _clearYtRecoveryTimer();
-    _ytRecoverTimer = setTimeout(() => {
-      if (_provider !== 'youtube' || !_ytPlayer || _isPlaying) return;
-      if (_ytSkipAttempts >= 2) return;
-      _ytSkipAttempts += 1;
-      _setCurrentTitle('Trying next track...');
-      try { _ytPlayer.nextVideo(); } catch (_) {}
-      try { _ytPlayer.playVideo(); } catch (_) {}
-      _scheduleYtStartupRecovery();
-    }, YT_STARTUP_RECOVERY_MS);
-  }
-
   function _recoverFromYoutubeError() {
     if (_provider !== 'youtube' || !_ytPlayer) return false;
     if (_ytSkipAttempts >= YT_MAX_SKIP_ATTEMPTS) return false;
@@ -105,7 +90,6 @@ const Player = (() => {
     _setCurrentTitle('Trying next track...');
     try { _ytPlayer.nextVideo(); } catch (_) {}
     try { _ytPlayer.playVideo(); } catch (_) {}
-    _scheduleYtStartupRecovery();
     return true;
   }
 
@@ -164,7 +148,7 @@ const Player = (() => {
       playerVars: {
         listType:       'playlist',
         list:            playlistId,
-        autoplay:        1,
+        autoplay:        0,
         controls:        0,
         disablekb:       1,
         rel:             0,
@@ -175,8 +159,11 @@ const Player = (() => {
       events: {
         onReady:       (e) => {
           _refreshYoutubeCurrentTitle();
-          e.target.playVideo();
-          _scheduleYtStartupRecovery();
+          try { e.target.mute(); } catch (_) {}
+          _setPlaying(false);
+          if (_contextTitle) {
+            _setCurrentTitle(`${_contextTitle} - Press Play to start`);
+          }
         },
         onStateChange: (e) => {
           const s = e.data;
@@ -190,10 +177,19 @@ const Player = (() => {
           if (s === YT.PlayerState.PLAYING) {
             _ytSkipAttempts = 0;
             _clearYtRecoveryTimer();
+            try {
+              _ytPlayer.unMute();
+              _ytPlayer.setVolume(100);
+            } catch (_) {}
           }
           _setPlaying(s === YT.PlayerState.PLAYING);
         },
         onError: () => {
+          if (!_isPlaying) {
+            _setPlaying(false);
+            _setCurrentTitle('Press Play to start music');
+            return;
+          }
           if (_recoverFromYoutubeError()) return;
           _setPlaying(false);
           _setCurrentTitle(_contextTitle || 'Playback unavailable');
@@ -234,7 +230,15 @@ const Player = (() => {
 
   btnPlay.addEventListener('click', () => {
     if (_provider === 'youtube' && _ytPlayer) {
-      _isPlaying ? _ytPlayer.pauseVideo() : _ytPlayer.playVideo();
+      if (_isPlaying) {
+        _ytPlayer.pauseVideo();
+      } else {
+        try {
+          _ytPlayer.unMute();
+          _ytPlayer.setVolume(100);
+        } catch (_) {}
+        _ytPlayer.playVideo();
+      }
     } else if (_provider === 'spotify') {
       _spMsg('toggle');
       _setPlaying(!_isPlaying); // optimistic toggle

@@ -122,7 +122,7 @@ describe('Player.load()', () => {
   it('shows current YouTube video title when the player is ready', async () => {
     await Player.load({ provider: 'youtube', id: 'PLYYYY', title: 'YT Playlist' });
     await new Promise((r) => setTimeout(r, 10));
-    expect(document.getElementById('transport-current').textContent).toBe('Current YT Track');
+    expect(document.getElementById('transport-current').textContent).toBe('YT Playlist - Press Play to start');
     expect(document.getElementById('transport-title').textContent).toBe('YT Playlist');
   });
 });
@@ -257,7 +257,15 @@ describe('YouTube transport controls', () => {
     expect(document.getElementById('transport').classList.contains('shown')).toBe(true);
   });
 
-  it('onError attempts to recover by skipping to next video', () => {
+  it('onError does not skip tracks before playback has started', () => {
+    ytEvents.onError();
+    expect(ytInstance.nextVideo).not.toHaveBeenCalled();
+    expect(ytInstance.playVideo).not.toHaveBeenCalled();
+    expect(document.getElementById('transport-current').textContent).toBe('Press Play to start music');
+  });
+
+  it('onError attempts to recover by skipping to next video once already playing', () => {
+    ytEvents.onStateChange({ data: YT.PlayerState.PLAYING });
     ytEvents.onError();
     expect(ytInstance.nextVideo).toHaveBeenCalled();
     expect(ytInstance.playVideo).toHaveBeenCalled();
