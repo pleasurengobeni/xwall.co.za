@@ -357,7 +357,7 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 1.25rem 1.5rem clamp(4rem, 10vh, 6.5rem);
+  padding: clamp(4.3rem, 9vh, 5.6rem) 1.5rem clamp(4rem, 10vh, 6.5rem);
   gap: 2.2rem;
   overflow: visible;
 }
@@ -635,7 +635,7 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 
 #home-login-buttons,
 #home-user-info {
-  position: fixed;
+  position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 0.85rem);
   right: calc(env(safe-area-inset-right, 0px) + 0.9rem);
   z-index: 35;
