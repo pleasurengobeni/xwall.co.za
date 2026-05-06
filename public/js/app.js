@@ -327,6 +327,7 @@
   function goMain() {
     viewHome.classList.add('hidden');
     viewMain.classList.remove('hidden');
+    const shouldMuteBackground = Boolean(parsedPlaylist);
 
     // Request fullscreen (best-effort — silently fails on iOS)
     const docEl = document.documentElement;
@@ -334,14 +335,14 @@
     else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
 
     _track('launch', { mode: selectedMode, video: selectedVideoIds[selectedMode] || null });
-    Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: false });
+    Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: shouldMuteBackground });
 
     // Force a second autostart attempt if the first initialization stalls.
     setTimeout(() => {
       const bg = document.getElementById('bg-video');
       if (!bg || viewMain.classList.contains('hidden')) return;
       if (!bg.classList.contains('loaded')) {
-        Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: false });
+        Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: shouldMuteBackground });
       }
     }, 2200);
 

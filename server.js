@@ -105,7 +105,8 @@ const sessionConfig = {
   cookie: {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    // Lax keeps OAuth callback sessions reliable across Chrome/Safari.
+    sameSite: 'lax',
     maxAge:   24 * 60 * 60 * 1000, // 24 h
   },
 };
