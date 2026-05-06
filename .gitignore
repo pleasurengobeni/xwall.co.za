@@ -3,6 +3,10 @@ node_modules/
 
 # Environment — never commit real secrets
 .env
+nginx/ssl/*.pem
+
+# Server-specific Docker Compose overrides (e.g. port bindings per host)
+docker-compose.override.yml
 
 # Logs
 *.log
