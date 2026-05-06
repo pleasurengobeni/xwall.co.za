@@ -5,6 +5,29 @@ const router  = express.Router();
 const analytics = require('../db/analytics');
 const { track: trackLimit, weather: weatherLimit } = require('../middleware/rateLimit');
 
+const MODE_SEARCH_QUERIES = {
+  fireplace: 'fireplace ambience crackling fire 4k',
+  rain:      'rain ambience nature 4k',
+  river:     'river ambience nature sounds 4k',
+  scenic:    'scenic nature ambience 4k',
+};
+
+function parseIso8601DurationToSeconds(value) {
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i.exec(value || '');
+  if (!match) return 0;
+  const hours = parseInt(match[1] || '0', 10);
+  const mins  = parseInt(match[2] || '0', 10);
+  const secs  = parseInt(match[3] || '0', 10);
+  return (hours * 3600) + (mins * 60) + secs;
+}
+
+function secondsToLabel(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const mins  = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
 function requireAuth(req, res, next) {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -119,6 +142,89 @@ router.get('/playlists', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Playlist fetch error:', err.message);
     res.status(500).json({ error: 'Failed to fetch playlists' });
+  }
+});
+
+// ── GET /api/videos/suggestions?mode=fireplace&limit=8 ─────────────────────
+// Returns embeddable YouTube ambience videos filtered to >= 30 minutes.
+router.get('/videos/suggestions', async (req, res) => {
+  const mode = String(req.query.mode || '').toLowerCase();
+  const query = MODE_SEARCH_QUERIES[mode];
+  if (!query) {
+    return res.status(400).json({ error: 'Unsupported mode' });
+  }
+
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: 'Video suggestions unavailable' });
+  }
+
+  const requestedLimit = parseInt(req.query.limit, 10);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(requestedLimit, 1), 12)
+    : 8;
+
+  try {
+    const searchParams = new URLSearchParams({
+      key:             apiKey,
+      part:            'snippet',
+      type:            'video',
+      q:               query,
+      maxResults:      '25',
+      videoDuration:   'long',
+      videoEmbeddable: 'true',
+      safeSearch:      'moderate',
+      relevanceLanguage: 'en',
+    });
+
+    const searchRes = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
+    if (!searchRes.ok) {
+      return res.status(502).json({ error: 'YouTube search failed' });
+    }
+
+    const searchData = await searchRes.json();
+    const videoIds = (searchData.items || [])
+      .map((item) => item?.id?.videoId)
+      .filter(Boolean);
+
+    if (!videoIds.length) return res.json({ videos: [] });
+
+    const detailsParams = new URLSearchParams({
+      key:  apiKey,
+      part: 'snippet,contentDetails',
+      id:   videoIds.join(','),
+      maxResults: String(Math.min(videoIds.length, 50)),
+    });
+
+    const detailsRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?${detailsParams}`);
+    if (!detailsRes.ok) {
+      return res.status(502).json({ error: 'YouTube details lookup failed' });
+    }
+
+    const detailsData = await detailsRes.json();
+    const byId = new Map((detailsData.items || []).map((item) => [item.id, item]));
+
+    const videos = videoIds
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .map((item) => {
+        const seconds = parseIso8601DurationToSeconds(item.contentDetails?.duration);
+        return {
+          id:            item.id,
+          title:         item.snippet?.title || 'Ambient Video',
+          thumbnail:     item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || null,
+          durationLabel: secondsToLabel(seconds),
+          durationSecs:  seconds,
+        };
+      })
+      .filter((v) => v.durationSecs >= 1800)
+      .slice(0, limit)
+      .map(({ durationSecs, ...rest }) => rest);
+
+    return res.json({ videos });
+  } catch (err) {
+    console.error('Video suggestion error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch suggestions' });
   }
 });
 

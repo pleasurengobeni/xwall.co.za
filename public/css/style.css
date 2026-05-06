@@ -850,6 +850,24 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   max-width: 100%;
 }
 
+.vlib-meta {
+  display: inline-block;
+  margin: 0 0.42rem 0.52rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  font-size: 0.54rem;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+
+.vlib-loading {
+  margin-top: 0.35rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    SAVED PLAYLISTS — shown in music section when signed in with Google
    ═══════════════════════════════════════════════════════════════════════════ */

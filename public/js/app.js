@@ -8,8 +8,8 @@
 (async () => {
   'use strict';
 
-  // ── Curated ambient video library per mode ────────────────────────────────
-  const VIDEO_LIBRARY = {
+  // ── Fallback ambient library (used if API suggestions are unavailable) ───
+  const FALLBACK_VIDEO_LIBRARY = {
     fireplace: [
       { id: 'ZY3J3Y_OU0w', title: 'Classic Fireplace' },
       { id: 'L_LUpnjgPso', title: 'Cozy Hearth' },
@@ -57,10 +57,13 @@
   let parsedPlaylist = null;
   let uiActiveTimer  = null;
 
+  const suggestedVideoLibrary = {};
+  const suggestionRequested   = new Set();
+
   // Selected video ID per mode — default to first entry in each library
   const selectedVideoIds = {};
-  Object.keys(VIDEO_LIBRARY).forEach((m) => {
-    selectedVideoIds[m] = VIDEO_LIBRARY[m][0].id;
+  Object.keys(FALLBACK_VIDEO_LIBRARY).forEach((m) => {
+    selectedVideoIds[m] = FALLBACK_VIDEO_LIBRARY[m][0].id;
   });
 
   // ── Analytics helper ────────────────────────────────────────────────────
@@ -102,23 +105,40 @@
   });
 
   // ── Video library panel ───────────────────────────────────────────────────
-  function _showVideoLibrary(mode) {
-    const videos = VIDEO_LIBRARY[mode];
-    if (!videos) {
-      videoLibraryEl.classList.add('hidden');
-      return;
-    }
+  function _escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  async function _fetchSuggestedVideos(mode) {
+    const res = await fetch(`/api/videos/suggestions?mode=${encodeURIComponent(mode)}&limit=8`);
+    if (!res.ok) throw new Error('suggestions unavailable');
+    const payload = await res.json();
+    if (!Array.isArray(payload.videos)) throw new Error('invalid suggestion payload');
+    return payload.videos;
+  }
+
+  function _renderVideoLibrary(mode, videos) {
     const activeId = selectedVideoIds[mode];
     videoLibraryEl.innerHTML =
       `<div class="vlib-scroll">${
-        videos.map((v) =>
-          `<button class="vlib-card${v.id === activeId ? ' active' : ''}" ` +
-          `data-id="${v.id}" data-mode="${mode}" type="button" aria-label="${v.title}">` +
-          `<img class="vlib-thumb" src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg" ` +
-          `alt="${v.title}" loading="lazy" />` +
-          `<span class="vlib-title">${v.title}</span>` +
-          `</button>`
-        ).join('')
+        videos.map((v) => {
+          const title = _escapeHtml(v.title);
+          const meta = _escapeHtml(v.durationLabel || '30+ min');
+          const thumb = _escapeHtml(v.thumbnail || `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`);
+          return (
+            `<button class="vlib-card${v.id === activeId ? ' active' : ''}" ` +
+            `data-id="${v.id}" data-mode="${mode}" type="button" aria-label="${title}">` +
+            `<img class="vlib-thumb" src="${thumb}" alt="${title}" loading="lazy" />` +
+            `<span class="vlib-title">${title}</span>` +
+            `<span class="vlib-meta">${meta}</span>` +
+            `</button>`
+          );
+        }).join('')
       }</div>`;
     videoLibraryEl.classList.remove('hidden');
 
@@ -126,11 +146,55 @@
       btn.addEventListener('click', () => {
         const m  = btn.dataset.mode;
         const id = btn.dataset.id;
-        selectedVideoIds[m] = id;        _track('video_select', { mode: m, videoId: id });        videoLibraryEl.querySelectorAll('.vlib-card').forEach((b) =>
+        selectedVideoIds[m] = id;
+        _track('video_select', { mode: m, videoId: id });
+        videoLibraryEl.querySelectorAll('.vlib-card').forEach((b) =>
           b.classList.toggle('active', b.dataset.id === id)
         );
       });
     });
+  }
+
+  function _showVideoLibrary(mode) {
+    const fallbackVideos = FALLBACK_VIDEO_LIBRARY[mode];
+    if (!fallbackVideos) {
+      videoLibraryEl.classList.add('hidden');
+      return;
+    }
+
+    const suggestedVideos = suggestedVideoLibrary[mode];
+    const videosToRender = suggestedVideos && suggestedVideos.length
+      ? suggestedVideos
+      : fallbackVideos;
+
+    if (!selectedVideoIds[mode] || !videosToRender.some((v) => v.id === selectedVideoIds[mode])) {
+      selectedVideoIds[mode] = videosToRender[0].id;
+    }
+
+    _renderVideoLibrary(mode, videosToRender);
+
+    if (suggestionRequested.has(mode)) return;
+
+    suggestionRequested.add(mode);
+    videoLibraryEl.insertAdjacentHTML(
+      'beforeend',
+      '<p class="vlib-loading">Finding 30+ minute YouTube videos...</p>'
+    );
+
+    _fetchSuggestedVideos(mode)
+      .then((videos) => {
+        if (!Array.isArray(videos) || !videos.length) return;
+        suggestedVideoLibrary[mode] = videos;
+        if (!videos.some((v) => v.id === selectedVideoIds[mode])) {
+          selectedVideoIds[mode] = videos[0].id;
+        }
+        if (selectedMode === mode) {
+          _renderVideoLibrary(mode, videos);
+        }
+      })
+      .catch(() => {
+        // Silent fallback to bundled list when suggestions cannot be fetched.
+      });
   }
 
   // ── Playlist URL input ───────────────────────────────────────────────────
