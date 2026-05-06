@@ -132,6 +132,12 @@
   }
 
   function _renderVideoLibrary(mode, videos) {
+    if (!Array.isArray(videos) || !videos.length) {
+      videoLibraryEl.innerHTML = '<p class="vlib-empty">No space videos available right now. Try again in a moment.</p>';
+      videoLibraryEl.classList.remove('hidden');
+      return;
+    }
+
     const activeId = selectedVideoIds[mode];
     videoLibraryEl.innerHTML =
       `<div class="vlib-scroll">${
