@@ -9,7 +9,7 @@ const MODE_SEARCH_QUERIES = {
   fireplace: 'fireplace ambience crackling fire 4k',
   rain:      'rain ambience nature 4k',
   river:     'river ambience nature sounds 4k',
-  scenic:    'scenic nature ambience 4k',
+  scenic:    'outer space ambience stars galaxy earth 4k',
 };
 
 function parseIso8601DurationToSeconds(value) {

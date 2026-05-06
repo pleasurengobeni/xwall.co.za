@@ -32,11 +32,11 @@
       { id: 'SmVAWKfJ4Go', title: 'Tropical River' },
     ],
     scenic: [
-      { id: 'BHACKCNDMW8', title: 'Scenic Drive' },
-      { id: 'DWcJFNfaw9c', title: 'Mountains' },
-      { id: '1ZYbU82uUws', title: 'Aerial Landscape' },
-      { id: 'XMTCjzAePXs', title: 'Golden Valley' },
-      { id: '3sL0omwElxw', title: 'Desert Sunset' },
+      { id: 'BHACKCNDMW8', title: 'Deep Space Drift' },
+      { id: 'DWcJFNfaw9c', title: 'Stars and Nebulae' },
+      { id: '1ZYbU82uUws', title: 'Orbit View' },
+      { id: 'XMTCjzAePXs', title: 'Galactic Horizon' },
+      { id: '3sL0omwElxw', title: 'Cosmic Silence' },
     ],
   };
 
