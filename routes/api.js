@@ -10,6 +10,7 @@ const MODE_SEARCH_QUERIES = {
   rain:      'rain ambience nature 4k',
   river:     'river ambience nature sounds 4k',
   scenic:    'outer space ambience stars galaxy earth 4k',
+  space:     'outer space ambience stars galaxy earth 4k',
 };
 
 function parseIso8601DurationToSeconds(value) {

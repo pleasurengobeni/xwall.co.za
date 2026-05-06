@@ -8,6 +8,14 @@
 (async () => {
   'use strict';
 
+  const MODE_ALIASES = {
+    space: 'scenic',
+  };
+
+  function normalizeMode(mode) {
+    return MODE_ALIASES[mode] || mode;
+  }
+
   // ── Fallback ambient library (used if API suggestions are unavailable) ───
   const FALLBACK_VIDEO_LIBRARY = {
     fireplace: [
@@ -80,14 +88,14 @@
   try {
     const saved = localStorage.getItem('xwall_mode');
     if (saved) {
-      selectedMode = saved;
-      cards.forEach((c) => c.classList.toggle('active', c.dataset.wallpaper === saved));
+      selectedMode = normalizeMode(saved);
+      cards.forEach((c) => c.classList.toggle('active', normalizeMode(c.dataset.wallpaper) === selectedMode));
     }
   } catch (_) {}
 
   // Default to first card if nothing saved
   if (!selectedMode && cards.length) {
-    selectedMode = cards[0].dataset.wallpaper;
+    selectedMode = normalizeMode(cards[0].dataset.wallpaper);
     cards[0].classList.add('active');
   }
 
@@ -99,7 +107,7 @@
     card.addEventListener('click', () => {
       cards.forEach((c) => c.classList.remove('active'));
       card.classList.add('active');
-      selectedMode = card.dataset.wallpaper;
+      selectedMode = normalizeMode(card.dataset.wallpaper);
       _track('mode_select', { mode: selectedMode });
       _showVideoLibrary(selectedMode);
     });
@@ -289,7 +297,12 @@
           urlHint.className   = `playlist-hint ${provider === 'spotify' ? 'hint-sp' : 'hint-yt'}`;
         });
       });
-    } catch (_) {}
+    } catch (_) {
+      savedPlaylistsEl.innerHTML =
+        '<p class="saved-playlists-label">Your playlists</p>' +
+        '<p class="saved-playlists-empty">Could not load playlists right now. Try sign out and sign in again.</p>';
+      savedPlaylistsEl.classList.remove('hidden');
+    }
   }
 
   function _hideSavedPlaylists() {
