@@ -43,6 +43,8 @@ router.get(
       'email',
       'https://www.googleapis.com/auth/youtube.readonly',
     ],
+    prompt: 'select_account',
+    includeGrantedScopes: true,
   })
 );
 

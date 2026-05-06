@@ -348,9 +348,12 @@
       const payload = await res.json();
       const list = Array.isArray(payload?.playlists) ? payload.playlists : [];
       if (!list.length) {
+        const emptyCopy = authUser?.provider === 'google'
+          ? 'No playlists found for this YouTube channel. Try sign out, then sign in again and choose the Google/Brand account that owns your playlists.'
+          : 'No playlists found for this account yet.';
         savedPlaylistsEl.innerHTML =
           '<p class="saved-playlists-label">Your playlists</p>' +
-          '<p class="saved-playlists-empty">No playlists found for this account yet.</p>';
+          `<p class="saved-playlists-empty">${emptyCopy}</p>`;
         savedPlaylistsEl.classList.remove('hidden');
         return;
       }
