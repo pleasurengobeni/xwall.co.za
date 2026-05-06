@@ -250,10 +250,11 @@ describe('YouTube transport controls', () => {
     expect(ytInstance.previousVideo).toHaveBeenCalled();
   });
 
-  it('stop button calls ytPlayer.stopVideo() and destroy()', () => {
+  it('stop button stops playback and keeps player mounted', () => {
     document.getElementById('tp-stop').click();
     expect(ytInstance.stopVideo).toHaveBeenCalled();
-    expect(ytInstance.destroy).toHaveBeenCalled();
+    expect(ytInstance.destroy).not.toHaveBeenCalled();
+    expect(document.getElementById('transport').classList.contains('shown')).toBe(true);
   });
 
   it('onError attempts to recover by skipping to next video', () => {

@@ -220,6 +220,17 @@ const Wallpaper = (() => {
           event.target.mute();
           event.target.playVideo();
 
+          if (_wantsAudibleBackground) {
+            setTimeout(() => {
+              if (token !== _loadToken) return;
+              _attemptAudibleBackgroundFromGesture();
+              const muted = typeof event.target.isMuted === 'function' ? event.target.isMuted() : false;
+              if (muted) {
+                _registerUserUnmuteListeners();
+              }
+            }, 180);
+          }
+
           clearTimeout(fadeTimer);
           fadeTimer = setTimeout(() => bgVideo.classList.add('loaded'), 700);
         },

@@ -241,7 +241,23 @@ const Player = (() => {
     }
   });
 
-  btnStop.addEventListener('click', () => stop(true));
+  function _softStop() {
+    if (_provider === 'youtube' && _ytPlayer) {
+      _ytPlayer.stopVideo();
+      _setPlaying(false);
+      _setCurrentTitle('Stopped');
+      return;
+    }
+
+    if (_provider === 'spotify') {
+      // Spotify iframe has no true stop command; toggle pause when currently playing.
+      if (_isPlaying) _spMsg('toggle');
+      _setPlaying(false);
+      _setCurrentTitle('Stopped');
+    }
+  }
+
+  btnStop.addEventListener('click', _softStop);
 
   btnPrev.addEventListener('click', () => {
     if (_provider === 'youtube' && _ytPlayer) {

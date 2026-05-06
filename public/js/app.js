@@ -334,7 +334,7 @@
     else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
 
     _track('launch', { mode: selectedMode, video: selectedVideoIds[selectedMode] || null });
-    Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: Boolean(parsedPlaylist) });
+    Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: false });
     WakeLock.request();
     WakeLock.startNetwork();
 
