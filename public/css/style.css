@@ -849,6 +849,7 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   grid-template-columns: 34px minmax(0, 1fr) 34px;
   align-items: center;
   gap: 0.35rem;
+  width: 100%;
 }
 
 .xrail-btn {
@@ -872,6 +873,8 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 .xrail-track {
   overflow-x: auto;
   scrollbar-width: none;
+  min-width: 0;
+  width: 100%;
 }
 
 .xrail-track::-webkit-scrollbar { display: none; }
