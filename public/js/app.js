@@ -56,6 +56,7 @@
   let selectedMode   = null;
   let parsedPlaylist = null;
   let uiActiveTimer  = null;
+  let authUser       = null;
 
   const suggestedVideoLibrary = {};
   const suggestionRequested   = new Set();
@@ -231,19 +232,31 @@
   async function _loadSavedPlaylists() {
     if (!savedPlaylistsEl) return;
     try {
-      const res  = await fetch('/api/playlists?provider=youtube');
-      const list = await res.json();
-      if (!Array.isArray(list) || !list.length) return;
+      const res = await fetch('/api/playlists');
+      const payload = await res.json();
+      const list = Array.isArray(payload?.playlists) ? payload.playlists : [];
+      if (!list.length) {
+        savedPlaylistsEl.innerHTML =
+          '<p class="saved-playlists-label">Your playlists</p>' +
+          '<p class="saved-playlists-empty">No playlists found for this account yet.</p>';
+        savedPlaylistsEl.classList.remove('hidden');
+        return;
+      }
+
+      const providerLabel = authUser?.provider === 'spotify' ? 'Spotify playlists' : 'YouTube playlists';
       savedPlaylistsEl.innerHTML =
-        `<p class="saved-playlists-label">Your YouTube playlists</p>` +
+        `<p class="saved-playlists-label">${providerLabel}</p>` +
         `<div class="saved-playlists-list">${
           list.map((pl) =>
             `<button class="spl-item" data-id="${pl.id}" data-provider="${pl.provider}" type="button">` +
             (pl.image
               ? `<img class="spl-thumb" src="${pl.image}" alt="" loading="lazy" />`
               : `<span class="spl-thumb-empty"></span>`) +
+            `<span class="spl-copy">` +
             `<span class="spl-name">${pl.name}</span>` +
-            `<span class="spl-badge">YT</span>` +
+            `<span class="spl-subtitle">Ready on this device</span>` +
+            `</span>` +
+            `<span class="spl-badge ${pl.provider === 'spotify' ? 'spl-badge-sp' : 'spl-badge-yt'}">${pl.provider === 'spotify' ? 'Spotify' : 'YouTube'}</span>` +
             `</button>`
           ).join('')
         }</div>`;
@@ -252,14 +265,18 @@
         btn.addEventListener('click', () => {
           savedPlaylistsEl.querySelectorAll('.spl-item').forEach((b) => b.classList.remove('active'));
           btn.classList.add('active');
+          const provider = btn.dataset.provider;
+          const name = btn.querySelector('.spl-name').textContent;
           parsedPlaylist = {
-            provider: btn.dataset.provider,
-            type:     'playlist',
+            provider,
+            type:     provider === 'spotify' ? 'playlist' : undefined,
             id:       btn.dataset.id,
-            title:    btn.querySelector('.spl-name').textContent,
+            title:    name,
           };
-          urlHint.textContent = `\u2713 ${btn.querySelector('.spl-name').textContent} selected`;
-          urlHint.className   = 'playlist-hint ok';
+          urlInput.value = '';
+          urlClear.classList.add('hidden');
+          urlHint.textContent = `\u2713 ${name} selected from your ${provider === 'spotify' ? 'Spotify' : 'YouTube'} account`;
+          urlHint.className   = `playlist-hint ${provider === 'spotify' ? 'hint-sp' : 'hint-yt'}`;
         });
       });
     } catch (_) {}
@@ -334,6 +351,7 @@
 
   // ── Auth check (shows/hides home sign-in row + saves playlists) ───────────
   Auth.onAuthChange(async (user) => {
+    authUser = user;
     if (user) {
       await _loadSavedPlaylists();
     } else {
