@@ -232,12 +232,14 @@ const Player = (() => {
     if (_provider === 'youtube' && _ytPlayer) {
       if (_isPlaying) {
         _ytPlayer.pauseVideo();
+        _setPlaying(false);
       } else {
         try {
           _ytPlayer.unMute();
           _ytPlayer.setVolume(100);
         } catch (_) {}
         _ytPlayer.playVideo();
+        _setPlaying(true);
       }
     } else if (_provider === 'spotify') {
       _spMsg('toggle');

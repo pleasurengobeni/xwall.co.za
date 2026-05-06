@@ -250,6 +250,21 @@ describe('YouTube transport controls', () => {
     expect(ytInstance.previousVideo).toHaveBeenCalled();
   });
 
+  it('play button updates icons immediately for YouTube', () => {
+    document.getElementById('tp-play').click();
+    expect(ytInstance.playVideo).toHaveBeenCalled();
+    expect(document.querySelector('.icon-play').classList.contains('hidden')).toBe(true);
+    expect(document.querySelector('.icon-pause').classList.contains('hidden')).toBe(false);
+  });
+
+  it('pause button updates icons immediately for YouTube', () => {
+    ytEvents.onStateChange({ data: YT.PlayerState.PLAYING });
+    document.getElementById('tp-play').click();
+    expect(ytInstance.pauseVideo).toHaveBeenCalled();
+    expect(document.querySelector('.icon-play').classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('.icon-pause').classList.contains('hidden')).toBe(true);
+  });
+
   it('stop button stops playback and keeps player mounted', () => {
     document.getElementById('tp-stop').click();
     expect(ytInstance.stopVideo).toHaveBeenCalled();
