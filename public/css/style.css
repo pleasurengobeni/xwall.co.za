@@ -221,6 +221,10 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 .home-header { text-align: center; }
 
 .home-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
   font-size: clamp(2rem, 7vw, 4.5rem);
   font-weight: 200;
   letter-spacing: 0.42em;
@@ -228,6 +232,13 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   color: #fff;
   opacity: 0.90;
   animation: homeReveal 1s var(--ease-smooth) both;
+}
+
+.home-logo-mark {
+  width: clamp(34px, 5vw, 52px);
+  height: clamp(34px, 5vw, 52px);
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
 }
 
 .home-tagline {

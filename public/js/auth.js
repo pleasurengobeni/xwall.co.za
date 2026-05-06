@@ -16,6 +16,11 @@ const Auth = (() => {
   let _user = null;
   let _onAuthChange = null;
 
+  function _buildAuthUrl(basePath) {
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    return `${basePath}?return_to=${encodeURIComponent(returnTo)}`;
+  }
+
   function _openAuthPopup(url, provider) {
     const w = 520;
     const h = 680;
@@ -91,7 +96,7 @@ const Auth = (() => {
       e.preventDefault();
       const href = link.getAttribute('href');
       const provider = href.includes('/google') ? 'google' : 'spotify';
-      _openAuthPopup(href, provider);
+      _openAuthPopup(_buildAuthUrl(href), provider);
     });
   });
 
@@ -128,8 +133,12 @@ const Auth = (() => {
   }
 
   if (params.has('auth') || params.has('error')) {
-    // Remove query params from URL bar without triggering a reload
-    window.history.replaceState({}, '', window.location.pathname);
+    // Remove OAuth marker params without touching other URL query params.
+    params.delete('auth');
+    params.delete('error');
+    const qs = params.toString();
+    const cleaned = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
+    window.history.replaceState({}, '', cleaned);
   }
 
   return { check, current: () => _user, onAuthChange: (cb) => { _onAuthChange = cb; } };
