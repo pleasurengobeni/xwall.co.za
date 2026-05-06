@@ -33,6 +33,7 @@ const Wallpaper = (() => {
   let _muteBackground  = false;
   let _wantsAudibleBackground = false;
   let _clockStyle      = 'digital';
+  let _cssOnlyBackground = false;
   let _ytPlayer        = null;
   let fadeTimer        = null;
   let _loadToken       = 0;
@@ -135,17 +136,19 @@ const Wallpaper = (() => {
   // ── Set a wallpaper mode ──────────────────────────────────────────────────
   function set(mode, videoIds, options = {}) {
     const requestedClockStyle = options.clockStyle || _clockStyle;
+    const requestedCssOnly = Boolean(options.cssOnly);
     const candidates = mode === 'clock'
       ? []
       : (Array.isArray(videoIds) ? videoIds.filter(Boolean) : [videoIds || VIDEO_IDS[mode]].filter(Boolean));
     const vid = mode !== 'clock' ? (candidates[0] || VIDEO_IDS[mode]) : null;
-    if (mode === currentMode && vid === _currentVideoId && (mode !== 'clock' || requestedClockStyle === _clockStyle)) return;
+    if (mode === currentMode && vid === _currentVideoId && (mode !== 'clock' || requestedClockStyle === _clockStyle) && requestedCssOnly === _cssOnlyBackground) return;
     currentMode     = mode;
     _currentVideoId = vid;
     _candidateIds   = candidates.length ? candidates : [VIDEO_IDS[mode]].filter(Boolean);
     _muteBackground = Boolean(options.muted);
     _wantsAudibleBackground = !_muteBackground;
     _clockStyle     = requestedClockStyle;
+    _cssOnlyBackground = requestedCssOnly;
 
     // Persist preference
     try { localStorage.setItem('xwall_mode', mode); } catch (_) {}
@@ -184,6 +187,8 @@ const Wallpaper = (() => {
     _destroyPlayer();
     _clearStartupRecoveryTimer();
     clearTimeout(fadeTimer);
+
+    if (_cssOnlyBackground) return;
 
     const token = ++_loadToken;
     const candidates = _candidateIds.length ? _candidateIds.slice() : [VIDEO_IDS[mode]];

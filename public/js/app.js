@@ -16,6 +16,13 @@
     return MODE_ALIASES[mode] || mode;
   }
 
+  function isMobileMediaEnvironment() {
+    const ua = navigator.userAgent || '';
+    const mobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    const coarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    return mobileUa || coarsePointer;
+  }
+
   // ── Fallback ambient library (used if API suggestions are unavailable) ───
   const FALLBACK_VIDEO_LIBRARY = {
     fireplace: [
@@ -412,6 +419,7 @@
     viewHome.classList.add('hidden');
     viewMain.classList.remove('hidden');
     const shouldMuteBackground = Boolean(parsedPlaylist);
+    const shouldUseCssOnlyBackground = Boolean(parsedPlaylist) && isMobileMediaEnvironment();
 
     // Request fullscreen (best-effort — silently fails on iOS)
     const docEl = document.documentElement;
@@ -422,6 +430,7 @@
     Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), {
       muted: shouldMuteBackground,
       clockStyle: selectedClockStyle,
+      cssOnly: shouldUseCssOnlyBackground,
     });
 
     // Force a second autostart attempt if the first initialization stalls.
@@ -432,6 +441,7 @@
         Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), {
           muted: shouldMuteBackground,
           clockStyle: selectedClockStyle,
+          cssOnly: shouldUseCssOnlyBackground,
         });
       }
     }, 2200);

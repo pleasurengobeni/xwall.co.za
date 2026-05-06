@@ -161,6 +161,14 @@ describe('Wallpaper video loading', () => {
     expect(YT.Player).toHaveBeenCalled();
   });
 
+  it('keeps css fallback only when cssOnly option is enabled', async () => {
+    Wallpaper.set('fireplace', ['vid1'], { cssOnly: true, muted: true });
+    await flushAsync();
+    expect(YT.Player).not.toHaveBeenCalled();
+    expect(document.getElementById('css-bg').className).toContain('fireplace');
+    expect(document.getElementById('bg-video').classList.contains('loaded')).toBe(false);
+  });
+
   it('tries the next candidate when the first video errors', async () => {
     Wallpaper.set('clock');
     Wallpaper.set('fireplace', ['bad1', 'good2']);
