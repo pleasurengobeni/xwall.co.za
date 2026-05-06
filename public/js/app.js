@@ -48,6 +48,13 @@
     ],
   };
 
+  const CLOCK_STYLE_LIBRARY = [
+    { id: 'digital', title: 'Digital Glow', meta: 'Classic 12-hour' },
+    { id: 'analog', title: 'Analog Watch', meta: 'Sweep hand dial' },
+    { id: 'minimal', title: 'Minimal 24h', meta: 'Clean + compact' },
+    { id: 'panel', title: 'Split Panel', meta: 'Large hour + minutes' },
+  ];
+
   // ── DOM refs ─────────────────────────────────────────────────────────────
   const viewHome         = document.getElementById('view-home');
   const viewMain         = document.getElementById('view-main');
@@ -65,6 +72,7 @@
   let parsedPlaylist = null;
   let uiActiveTimer  = null;
   let authUser       = null;
+  let selectedClockStyle = 'digital';
 
   const suggestedVideoLibrary = {};
   const suggestionRequested   = new Set();
@@ -90,6 +98,13 @@
     if (saved) {
       selectedMode = normalizeMode(saved);
       cards.forEach((c) => c.classList.toggle('active', normalizeMode(c.dataset.wallpaper) === selectedMode));
+    }
+  } catch (_) {}
+
+  try {
+    const savedClockStyle = localStorage.getItem('xwall_clock_style');
+    if (savedClockStyle && CLOCK_STYLE_LIBRARY.some((s) => s.id === savedClockStyle)) {
+      selectedClockStyle = savedClockStyle;
     }
   } catch (_) {}
 
@@ -176,6 +191,11 @@
   }
 
   function _showVideoLibrary(mode) {
+    if (mode === 'clock') {
+      _renderClockStyles();
+      return;
+    }
+
     const fallbackVideos = FALLBACK_VIDEO_LIBRARY[mode];
     if (!fallbackVideos) {
       videoLibraryEl.classList.add('hidden');
@@ -217,6 +237,42 @@
       });
   }
 
+  function _renderClockStyles() {
+    videoLibraryEl.innerHTML =
+      `<div class="xrail" data-step="252">` +
+      `<button class="xrail-btn xrail-btn-left" type="button" aria-label="Scroll clock styles left">&lt;</button>` +
+      `<div class="xrail-track vlib-scroll">${
+        CLOCK_STYLE_LIBRARY.map((style) =>
+          `<button class="vlib-card clock-style-card${style.id === selectedClockStyle ? ' active' : ''}" data-clock-style="${style.id}" type="button" aria-label="${_escapeHtml(style.title)}">` +
+          `<span class="clock-style-thumb clock-style-thumb-${style.id}" aria-hidden="true"></span>` +
+          `<span class="vlib-title">${_escapeHtml(style.title)}</span>` +
+          `<span class="vlib-meta">${_escapeHtml(style.meta)}</span>` +
+          `</button>`
+        ).join('')
+      }</div>` +
+      `<button class="xrail-btn xrail-btn-right" type="button" aria-label="Scroll clock styles right">&gt;</button>` +
+      `</div>` +
+      `<p class="vlib-loading">Clock mode styles: choose your preferred watch face.</p>`;
+
+    videoLibraryEl.classList.remove('hidden');
+    _wireHorizontalRail(videoLibraryEl);
+
+    videoLibraryEl.querySelectorAll('.clock-style-card').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const styleId = btn.dataset.clockStyle;
+        if (!CLOCK_STYLE_LIBRARY.some((style) => style.id === styleId)) return;
+
+        selectedClockStyle = styleId;
+        try { localStorage.setItem('xwall_clock_style', selectedClockStyle); } catch (_) {}
+        _track('clock_style_select', { style: selectedClockStyle });
+
+        videoLibraryEl.querySelectorAll('.clock-style-card').forEach((card) => {
+          card.classList.toggle('active', card.dataset.clockStyle === selectedClockStyle);
+        });
+      });
+    });
+  }
+
   function _wireHorizontalRail(rootEl) {
     const rail = rootEl.querySelector('.xrail');
     const track = rootEl.querySelector('.xrail-track');
@@ -224,9 +280,15 @@
     const right = rootEl.querySelector('.xrail-btn-right');
     if (!rail || !track || !left || !right) return;
 
-    const step = parseInt(rail.dataset.step || '220', 10);
-    left.addEventListener('click', () => track.scrollBy({ left: -step, behavior: 'smooth' }));
-    right.addEventListener('click', () => track.scrollBy({ left: step, behavior: 'smooth' }));
+    const stepRaw = rail.dataset.step || '220';
+    const resolveStep = () => {
+      if (stepRaw === 'page') return Math.max(track.clientWidth - 24, 180);
+      const parsed = parseInt(stepRaw, 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 220;
+    };
+
+    left.addEventListener('click', () => track.scrollBy({ left: -resolveStep(), behavior: 'smooth' }));
+    right.addEventListener('click', () => track.scrollBy({ left: resolveStep(), behavior: 'smooth' }));
   }
 
   function _orderedVideoIdsForMode(mode) {
@@ -289,7 +351,7 @@
       const providerLabel = authUser?.provider === 'spotify' ? 'Spotify playlists' : 'YouTube playlists';
       savedPlaylistsEl.innerHTML =
         `<p class="saved-playlists-label">${providerLabel}</p>` +
-        `<div class="xrail" data-step="340">` +
+        `<div class="xrail" data-step="page">` +
         `<button class="xrail-btn xrail-btn-left" type="button" aria-label="Scroll playlists left">&lt;</button>` +
         `<div class="xrail-track saved-playlists-list">${
           list.map((pl) =>
@@ -357,14 +419,20 @@
     else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
 
     _track('launch', { mode: selectedMode, video: selectedVideoIds[selectedMode] || null });
-    Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: shouldMuteBackground });
+    Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), {
+      muted: shouldMuteBackground,
+      clockStyle: selectedClockStyle,
+    });
 
     // Force a second autostart attempt if the first initialization stalls.
     setTimeout(() => {
       const bg = document.getElementById('bg-video');
       if (!bg || viewMain.classList.contains('hidden')) return;
       if (!bg.classList.contains('loaded')) {
-        Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: shouldMuteBackground });
+        Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), {
+          muted: shouldMuteBackground,
+          clockStyle: selectedClockStyle,
+        });
       }
     }, 2200);
 
