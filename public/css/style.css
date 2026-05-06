@@ -619,6 +619,7 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   flex-direction: column;
   align-items: center;
   gap: 0.55rem;
+  width: 100%;
   animation: homeReveal 0.8s 0.45s var(--ease-smooth) both;
 }
 
@@ -627,9 +628,24 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   letter-spacing: 0.08em;
   opacity: 0.28;
   text-transform: uppercase;
+  display: none;
 }
 
 .home-auth-buttons { display: flex; gap: 0.45rem; }
+
+#home-login-buttons,
+#home-user-info {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 0.85rem);
+  right: calc(env(safe-area-inset-right, 0px) + 0.9rem);
+  z-index: 35;
+  padding: 0.42rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(8,10,16,0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
 
 /* Shared login button style — used on home */
 .login-btn {
@@ -680,7 +696,7 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 .home-logout-btn:hover { background: rgba(255,255,255,0.16); }
 
 .home-legal {
-  margin-top: 0.2rem;
+  margin-top: 0.9rem;
   font-size: 0.66rem;
   letter-spacing: 0.03em;
   opacity: 0.62;
@@ -937,6 +953,12 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   .wp-cards      { gap: 0.55rem; }
   .transport     { bottom: 1.4rem; }
   .launch-btn    { padding: 0.75rem 2rem; }
+  #home-login-buttons,
+  #home-user-info {
+    top: calc(env(safe-area-inset-top, 0px) + 0.6rem);
+    right: calc(env(safe-area-inset-right, 0px) + 0.55rem);
+    padding: 0.35rem 0.42rem;
+  }
 }
 
 @media (max-width: 420px) {
