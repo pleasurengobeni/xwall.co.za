@@ -2,16 +2,24 @@
  * @jest-environment jsdom
  *
  * tests/wallpaper.test.js
- * Tests for the Wallpaper module: set(), mode persistence, clock/rain coordination.
+ * Tests for the Wallpaper module: mode persistence, clock/rain coordination,
+ * YouTube background API loading, mute preference, and fallback behaviour.
  */
 
 let clockStartSpy, clockStopSpy, rainStartSpy, rainStopSpy;
+let lastPlayer;
+
+async function flushAsync() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 beforeAll(() => {
   document.body.innerHTML = `
     <div id="bg-layer">
       <div id="css-bg"></div>
-      <iframe id="bg-video" class=""></iframe>
+      <div id="bg-video" class=""></div>
     </div>
   `;
 
@@ -24,50 +32,57 @@ beforeAll(() => {
   rainStartSpy  = jest.spyOn(Rain,  'start');
   rainStopSpy   = jest.spyOn(Rain,  'stop');
 
-  jest.useFakeTimers();
+  global.YT = {
+    PlayerState: { PLAYING: 1, BUFFERING: 3 },
+    Player: jest.fn().mockImplementation((_el, opts) => {
+      const player = {
+        playVideo: jest.fn(),
+        destroy: jest.fn(),
+        mute: jest.fn(),
+        unMute: jest.fn(),
+        setVolume: jest.fn(),
+      };
+      lastPlayer = player;
+      setTimeout(() => opts.events?.onReady?.({ target: player }), 0);
+      return player;
+    }),
+  };
+  window.YT = global.YT;
+
   const { loadModule } = require('./setup/globals');
   loadModule('wallpaper.js');
 });
 
 afterEach(() => {
-  // Reset Wallpaper's internal currentMode so the next test's set() is never
-  // treated as a no-op. Use a sentinel value that no real test will use.
   Wallpaper.set('_reset_');
-  jest.clearAllMocks();
-  // Reset CSS classes
   const cssBg   = document.getElementById('css-bg');
   const bgVideo = document.getElementById('bg-video');
   if (cssBg)   cssBg.className   = '';
   if (bgVideo) bgVideo.className = '';
-  bgVideo.setAttribute('src', '');
-  jest.clearAllTimers();
+  bgVideo.innerHTML = '';
+  lastPlayer = null;
+  jest.clearAllMocks();
 });
-
-afterAll(() => jest.useRealTimers());
 
 // ── set() — basic mode switching ─────────────────────────────────────────────
 describe('Wallpaper.set()', () => {
   it('sets css-bg class to "css-bg fireplace" for fireplace mode', () => {
     Wallpaper.set('fireplace');
-    jest.advanceTimersByTime(300);
     expect(document.getElementById('css-bg').className).toContain('fireplace');
   });
 
   it('sets css-bg class to "css-bg rain" for rain mode', () => {
     Wallpaper.set('rain');
-    jest.advanceTimersByTime(300);
     expect(document.getElementById('css-bg').className).toContain('rain');
   });
 
   it('sets css-bg class to "css-bg river" for river mode', () => {
     Wallpaper.set('river');
-    jest.advanceTimersByTime(300);
     expect(document.getElementById('css-bg').className).toContain('river');
   });
 
   it('sets css-bg class to "css-bg scenic" for scenic mode', () => {
     Wallpaper.set('scenic');
-    jest.advanceTimersByTime(300);
     expect(document.getElementById('css-bg').className).toContain('scenic');
   });
 
@@ -131,33 +146,35 @@ describe('Wallpaper rain mode coordination', () => {
 describe('Wallpaper.set() idempotency', () => {
   it('does not fire timers again when same mode called twice', () => {
     Wallpaper.set('river');
-    const timerSpy = jest.spyOn(global, 'setTimeout');
+    const playerSpy = jest.spyOn(YT, 'Player');
     Wallpaper.set('river'); // no-op
-    expect(timerSpy).not.toHaveBeenCalled();
-    timerSpy.mockRestore();
+    expect(playerSpy).not.toHaveBeenCalled();
+    playerSpy.mockRestore();
   });
 });
 
-// ── Video fade-in timing ──────────────────────────────────────────────────────
+// ── Video loading / playback ────────────────────────────────────────────────
 describe('Wallpaper video loading', () => {
-  it('video src is set after 200 ms delay', () => {
+  it('creates a YT.Player instance for video modes', async () => {
     Wallpaper.set('fireplace');
-    expect(document.getElementById('bg-video').getAttribute('src')).toBe('');
-    jest.advanceTimersByTime(200);
-    expect(document.getElementById('bg-video').src).toContain('youtube.com');
+    await flushAsync();
+    expect(YT.Player).toHaveBeenCalled();
   });
 
-  it('video gets "loaded" class after 200 + 2500 ms', () => {
-    Wallpaper.set('scenic');
-    jest.advanceTimersByTime(2700);
+  it('tries the next candidate when the first video errors', async () => {
+    Wallpaper.set('clock');
+    Wallpaper.set('fireplace', ['bad1', 'good2']);
+    await flushAsync();
+    YT.Player.mock.calls[0][1].events.onError();
+    expect(YT.Player).toHaveBeenCalledTimes(2);
+  });
+
+  it('adds loaded class when playback starts', async () => {
+    Wallpaper.set('clock');
+    Wallpaper.set('scenic', ['space1']);
+    await flushAsync();
+    YT.Player.mock.calls[0][1].events.onStateChange({ data: YT.PlayerState.PLAYING });
     expect(document.getElementById('bg-video').classList.contains('loaded')).toBe(true);
-  });
-
-  it('bg-video loses "loaded" class immediately on mode switch', () => {
-    Wallpaper.set('fireplace');
-    jest.advanceTimersByTime(2700); // fully loaded
-    Wallpaper.set('river');
-    expect(document.getElementById('bg-video').classList.contains('loaded')).toBe(false);
   });
 });
 

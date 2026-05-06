@@ -9,6 +9,7 @@ const Player = (() => {
   'use strict';
 
   const transport     = document.getElementById('transport');
+  const currentEl     = document.getElementById('transport-current');
   const titleEl       = document.getElementById('transport-title');
   const btnPlay       = document.getElementById('tp-play');
   const btnStop       = document.getElementById('tp-stop');
@@ -23,6 +24,7 @@ const Player = (() => {
   let _ytPlayer  = null;
   let _isPlaying = false;
   let _ytApiReady = !!(window.YT && window.YT.Player);
+  let _contextTitle = '';
 
   // ── YouTube IFrame API loader ─────────────────────────────────────────────
   // Called once; resolved when window.onYouTubeIframeAPIReady fires
@@ -56,6 +58,21 @@ const Player = (() => {
     });
   }
 
+  function _setContextTitle(value) {
+    _contextTitle = value || '';
+    titleEl.textContent = _contextTitle;
+  }
+
+  function _setCurrentTitle(value) {
+    currentEl.textContent = value || '';
+  }
+
+  function _refreshYoutubeCurrentTitle() {
+    if (!_ytPlayer || typeof _ytPlayer.getVideoData !== 'function') return;
+    const title = _ytPlayer.getVideoData()?.title;
+    if (title) _setCurrentTitle(title);
+  }
+
   // ── URL parser — returns { provider, id, title } or null ─────────────────
   function parseUrl(raw) {
     const url = raw.trim();
@@ -81,7 +98,8 @@ const Player = (() => {
   async function load(parsed) {
     stop(false); // stop previous without hiding transport
     _provider = parsed.provider;
-    titleEl.textContent = parsed.title || parsed.id;
+    _setContextTitle(parsed.title || parsed.id);
+    _setCurrentTitle(parsed.title || parsed.id);
 
     if (parsed.provider === 'youtube') {
       await _loadYoutube(parsed.id);
@@ -117,12 +135,25 @@ const Player = (() => {
         origin:          window.location.origin,
       },
       events: {
-        onReady:       (e) => { e.target.playVideo(); },
+        onReady:       (e) => {
+          _refreshYoutubeCurrentTitle();
+          e.target.playVideo();
+        },
         onStateChange: (e) => {
           const s = e.data;
+          if (
+            s === YT.PlayerState.PLAYING ||
+            s === YT.PlayerState.BUFFERING ||
+            s === YT.PlayerState.CUED
+          ) {
+            _refreshYoutubeCurrentTitle();
+          }
           _setPlaying(s === YT.PlayerState.PLAYING);
         },
-        onError: () => { _setPlaying(false); },
+        onError: () => {
+          _setPlaying(false);
+          _setCurrentTitle(_contextTitle || 'Playback unavailable');
+        },
       },
     });
   }
@@ -190,6 +221,8 @@ const Player = (() => {
     spEmbed.src = '';
     spEmbed.classList.add('hidden');
     _setPlaying(false);
+    _setCurrentTitle('');
+    _setContextTitle('');
     _provider = null;
     if (hidePanel) transport.classList.remove('shown');
   }

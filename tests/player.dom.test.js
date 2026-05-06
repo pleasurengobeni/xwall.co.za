@@ -12,6 +12,7 @@
 beforeAll(() => {
   document.body.innerHTML = `
     <div id="transport"></div>
+    <span id="transport-current"></span>
     <span id="transport-title"></span>
     <button id="tp-play">
       <span class="icon-play"></span>
@@ -27,8 +28,7 @@ beforeAll(() => {
 
   // Fake YT global (YouTube IFrame API stub)
   global.YT = {
-    loaded: 1,
-    PlayerState: { PLAYING: 1, PAUSED: 2, ENDED: 0 },
+    PlayerState: { PLAYING: 1, PAUSED: 2, ENDED: 0, BUFFERING: 3, CUED: 5 },
     Player: jest.fn().mockImplementation((_el, opts) => {
       const player = {
         playVideo:     jest.fn(),
@@ -37,6 +37,7 @@ beforeAll(() => {
         nextVideo:     jest.fn(),
         previousVideo: jest.fn(),
         destroy:       jest.fn(),
+        getVideoData:  jest.fn(() => ({ title: 'Current YT Track' })),
         _opts:         opts,
       };
       // Immediately fire onReady so load() resolves
@@ -86,6 +87,11 @@ describe('Player.load()', () => {
     expect(document.getElementById('transport-title').textContent).toBe('My Playlist');
   });
 
+  it('sets current line to the provided title initially', async () => {
+    await Player.load({ provider: 'spotify', type: 'playlist', id: 'x', title: 'My Playlist' });
+    expect(document.getElementById('transport-current').textContent).toBe('My Playlist');
+  });
+
   it('sets sp-embed src for Spotify', async () => {
     await Player.load({ provider: 'spotify', type: 'playlist', id: 'SPID', title: 'T' });
     const iframe = document.getElementById('sp-embed');
@@ -112,6 +118,13 @@ describe('Player.load()', () => {
     await Player.load({ provider: 'spotify', type: 'playlist', id: 'NOID', title: '' });
     expect(document.getElementById('transport-title').textContent).toBe('NOID');
   });
+
+  it('shows current YouTube video title when the player is ready', async () => {
+    await Player.load({ provider: 'youtube', id: 'PLYYYY', title: 'YT Playlist' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(document.getElementById('transport-current').textContent).toBe('Current YT Track');
+    expect(document.getElementById('transport-title').textContent).toBe('YT Playlist');
+  });
 });
 
 // ── stop() ────────────────────────────────────────────────────────────────────
@@ -137,6 +150,12 @@ describe('Player.stop()', () => {
 
   it('does not throw when called with nothing loaded', () => {
     expect(() => Player.stop(true)).not.toThrow();
+  });
+
+  it('clears the current title on stop', async () => {
+    await Player.load({ provider: 'spotify', type: 'playlist', id: 'x', title: 'x' });
+    Player.stop(true);
+    expect(document.getElementById('transport-current').textContent).toBe('');
   });
 
   it('does not hide transport when hidePanel=false', async () => {

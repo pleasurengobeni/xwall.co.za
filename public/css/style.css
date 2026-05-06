@@ -691,14 +691,27 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.4rem;
+}
+
+.transport-current {
+  font-size: 0.88rem;
+  font-weight: 500;
+  opacity: 0.92;
+  letter-spacing: 0.01em;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 
 .transport-title {
-  font-size: 0.76rem;
+  font-size: 0.68rem;
   font-weight: 400;
-  opacity: 0.5;
-  letter-spacing: 0.04em;
+  opacity: 0.42;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   max-width: 280px;
   white-space: nowrap;
   overflow: hidden;

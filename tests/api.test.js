@@ -184,3 +184,67 @@ describe('playlist shaping — YouTube', () => {
     expect(json).toHaveBeenCalledWith({ error: 'Failed to fetch playlists' });
   });
 });
+
+describe('video suggestions', () => {
+  const originalApiKey = process.env.GOOGLE_API_KEY;
+  let originalFetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    process.env.GOOGLE_API_KEY = 'test-google-key';
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    process.env.GOOGLE_API_KEY = originalApiKey;
+  });
+
+  it('filters suggestions to 30+ minute embeddable videos and returns duration labels', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            { id: { videoId: 'long1' } },
+            { id: { videoId: 'short1' } },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'long1',
+              snippet: { title: 'Long Space Video', thumbnails: { medium: { url: 'https://img/long.jpg' } } },
+              contentDetails: { duration: 'PT2H5M' },
+            },
+            {
+              id: 'short1',
+              snippet: { title: 'Short Clip', thumbnails: { medium: { url: 'https://img/short.jpg' } } },
+              contentDetails: { duration: 'PT9M' },
+            },
+          ],
+        }),
+      });
+
+    const res = await request(app).get('/api/videos/suggestions?mode=scenic&limit=5');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      videos: [
+        {
+          id: 'long1',
+          title: 'Long Space Video',
+          thumbnail: 'https://img/long.jpg',
+          durationLabel: '2h 5m',
+        },
+      ],
+    });
+  });
+
+  it('returns 400 for unsupported suggestion mode', async () => {
+    const res = await request(app).get('/api/videos/suggestions?mode=unknown');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Unsupported mode' });
+  });
+});
