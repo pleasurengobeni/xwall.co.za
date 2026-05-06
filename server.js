@@ -138,6 +138,11 @@ app.use('/admin', adminRoutes);
 // Keep-alive ping endpoint (called by client's network keep-alive timer)
 app.get('/ping', (_req, res) => res.status(200).json({ ok: true }));
 
+// Public legal page used by OAuth consent configuration
+app.get('/privacy-policy', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html'));
+});
+
 // ── Static files ──────────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
