@@ -22,15 +22,31 @@ const Player = (() => {
   let _provider  = null; // 'youtube' | 'spotify'
   let _ytPlayer  = null;
   let _isPlaying = false;
-  let _ytApiReady = ('YT' in window && window.YT.loaded);
-  const _ytReadyCallbacks = [];
+  let _ytApiReady = !!(window.YT && window.YT.Player);
 
   // ── YouTube IFrame API loader ─────────────────────────────────────────────
   // Called once; resolved when window.onYouTubeIframeAPIReady fires
   function _ensureYtApi() {
-    if (_ytApiReady) return Promise.resolve();
+    if (_ytApiReady || (window.YT && window.YT.Player)) {
+      _ytApiReady = true;
+      return Promise.resolve();
+    }
+
     return new Promise((resolve) => {
-      _ytReadyCallbacks.push(resolve);
+      const queue = window.__xwallYtReadyCallbacks || (window.__xwallYtReadyCallbacks = []);
+      queue.push(resolve);
+
+      if (!window.__xwallYtApiBootstrap) {
+        window.__xwallYtApiBootstrap = true;
+        const previousReady = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = function () {
+          _ytApiReady = true;
+          const callbacks = window.__xwallYtReadyCallbacks || [];
+          callbacks.splice(0).forEach((fn) => fn());
+          if (typeof previousReady === 'function') previousReady();
+        };
+      }
+
       if (!document.getElementById('yt-api-script')) {
         const s = document.createElement('script');
         s.id  = 'yt-api-script';
@@ -39,13 +55,6 @@ const Player = (() => {
       }
     });
   }
-
-  // YouTube calls this when the IFrame API is ready
-  window.onYouTubeIframeAPIReady = function () {
-    _ytApiReady = true;
-    _ytReadyCallbacks.forEach((fn) => fn());
-    _ytReadyCallbacks.length = 0;
-  };
 
   // ── URL parser — returns { provider, id, title } or null ─────────────────
   function parseUrl(raw) {

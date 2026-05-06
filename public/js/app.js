@@ -198,6 +198,16 @@
       });
   }
 
+  function _orderedVideoIdsForMode(mode) {
+    const library = suggestedVideoLibrary[mode]?.length
+      ? suggestedVideoLibrary[mode]
+      : FALLBACK_VIDEO_LIBRARY[mode] || [];
+    const preferredId = selectedVideoIds[mode];
+    return [preferredId]
+      .concat(library.map((video) => video.id))
+      .filter((id, index, arr) => id && arr.indexOf(id) === index);
+  }
+
   // ── Playlist URL input ───────────────────────────────────────────────────
   urlInput.addEventListener('input', () => {
     const raw = urlInput.value.trim();
@@ -303,7 +313,7 @@
     else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
 
     _track('launch', { mode: selectedMode, video: selectedVideoIds[selectedMode] || null });
-    Wallpaper.set(selectedMode, selectedVideoIds[selectedMode]);
+    Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: Boolean(parsedPlaylist) });
     WakeLock.request();
     WakeLock.startNetwork();
 

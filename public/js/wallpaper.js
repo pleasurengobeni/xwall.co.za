@@ -26,36 +26,64 @@ const Wallpaper = (() => {
   const bgVideo    = document.getElementById('bg-video');
   const cssBg      = document.getElementById('css-bg');
 
-  let currentMode     = null;
+  let currentMode      = null;
   let _currentVideoId  = null;
+  let _candidateIds    = [];
+  let _muteBackground  = false;
+  let _ytPlayer        = null;
   let fadeTimer        = null;
+  let _loadToken       = 0;
+  let _ytApiReady      = !!(window.YT && window.YT.Player);
 
-  // ── YouTube embed URL builder ─────────────────────────────────────────────
-  function _ytUrl(id) {
-    const p = new URLSearchParams({
-      autoplay:        1,
-      mute:            1,
-      loop:            1,
-      controls:        0,
-      playlist:        id,   // required for loop to work
-      rel:             0,
-      showinfo:        0,
-      iv_load_policy:  3,
-      modestbranding:  1,
-      disablekb:       1,
-      playsinline:     1,
-      enablejsapi:     1,
-      origin:          window.location.origin,
+  function _ensureYtApi() {
+    if (_ytApiReady || (window.YT && window.YT.Player)) {
+      _ytApiReady = true;
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const queue = window.__xwallYtReadyCallbacks || (window.__xwallYtReadyCallbacks = []);
+      queue.push(resolve);
+
+      if (!window.__xwallYtApiBootstrap) {
+        window.__xwallYtApiBootstrap = true;
+        const previousReady = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = function () {
+          _ytApiReady = true;
+          const callbacks = window.__xwallYtReadyCallbacks || [];
+          callbacks.splice(0).forEach((fn) => fn());
+          if (typeof previousReady === 'function') previousReady();
+        };
+      }
+
+      if (!document.getElementById('yt-api-script')) {
+        const script = document.createElement('script');
+        script.id = 'yt-api-script';
+        script.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(script);
+      }
     });
-    return `https://www.youtube.com/embed/${id}?${p}`;
+  }
+
+  function _destroyPlayer() {
+    if (_ytPlayer) {
+      try { _ytPlayer.destroy(); } catch (_) {}
+      _ytPlayer = null;
+    }
+    bgVideo.innerHTML = '';
   }
 
   // ── Set a wallpaper mode ──────────────────────────────────────────────────
-  function set(mode, videoId) {
-    const vid = (mode !== 'clock') ? (videoId || VIDEO_IDS[mode]) : null;
+  function set(mode, videoIds, options = {}) {
+    const candidates = mode === 'clock'
+      ? []
+      : (Array.isArray(videoIds) ? videoIds.filter(Boolean) : [videoIds || VIDEO_IDS[mode]].filter(Boolean));
+    const vid = mode !== 'clock' ? (candidates[0] || VIDEO_IDS[mode]) : null;
     if (mode === currentMode && vid === _currentVideoId) return;
     currentMode     = mode;
     _currentVideoId = vid;
+    _candidateIds   = candidates.length ? candidates : [VIDEO_IDS[mode]].filter(Boolean);
+    _muteBackground = Boolean(options.muted);
 
     // Persist preference
     try { localStorage.setItem('xwall_mode', mode); } catch (_) {}
@@ -70,14 +98,13 @@ const Wallpaper = (() => {
   function _activateClock() {
     Rain.stop();
     Clock.start();
-    // Hide video
     bgVideo.classList.remove('loaded');
     clearTimeout(fadeTimer);
-    setTimeout(() => { bgVideo.src = ''; }, 1500);
+    _destroyPlayer();
     cssBg.className = 'css-bg clock-bg';
   }
 
-  function _activateVideo(mode, videoId) {
+  async function _activateVideo(mode) {
     Clock.stop();
 
     // Start / stop rain canvas
@@ -90,17 +117,68 @@ const Wallpaper = (() => {
     // CSS fallback visible immediately
     cssBg.className = `css-bg ${mode}`;
 
-    // Unload previous video
     bgVideo.classList.remove('loaded');
-    bgVideo.src = '';
-
-    // Load new video with a brief delay so the CSS is visible first
+    _destroyPlayer();
     clearTimeout(fadeTimer);
-    fadeTimer = setTimeout(() => {
-      bgVideo.src = _ytUrl(videoId || VIDEO_IDS[mode]);
-      // Fade in after additional delay (allow iframe to buffer)
-      fadeTimer = setTimeout(() => bgVideo.classList.add('loaded'), 2500);
-    }, 200);
+
+    const token = ++_loadToken;
+    const candidates = _candidateIds.length ? _candidateIds.slice() : [VIDEO_IDS[mode]];
+
+    await _ensureYtApi();
+    if (token !== _loadToken) return;
+
+    _tryLoadCandidate(mode, candidates, token);
+  }
+
+  function _tryLoadCandidate(mode, candidates, token) {
+    const nextId = candidates.shift();
+    if (!nextId || token !== _loadToken) return;
+
+    _currentVideoId = nextId;
+    bgVideo.innerHTML = '';
+
+    _ytPlayer = new YT.Player('bg-video', {
+      videoId: nextId,
+      width: '100%',
+      height: '100%',
+      playerVars: {
+        autoplay:        1,
+        controls:        0,
+        loop:            1,
+        playlist:        nextId,
+        rel:             0,
+        iv_load_policy:  3,
+        modestbranding:  1,
+        disablekb:       1,
+        playsinline:     1,
+        origin:          window.location.origin,
+      },
+      events: {
+        onReady: (event) => {
+          if (token !== _loadToken) return;
+          if (_muteBackground) {
+            event.target.mute();
+          } else {
+            event.target.unMute();
+            event.target.setVolume(100);
+          }
+          event.target.playVideo();
+          clearTimeout(fadeTimer);
+          fadeTimer = setTimeout(() => bgVideo.classList.add('loaded'), 700);
+        },
+        onStateChange: (event) => {
+          if (token !== _loadToken) return;
+          if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING) {
+            bgVideo.classList.add('loaded');
+          }
+        },
+        onError: () => {
+          bgVideo.classList.remove('loaded');
+          _destroyPlayer();
+          _tryLoadCandidate(mode, candidates, token);
+        },
+      },
+    });
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
