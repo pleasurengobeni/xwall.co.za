@@ -16,10 +16,32 @@
 const { Pool } = require('pg');
 
 const connStr  = process.env.DATABASE_URL || '';
-const isLocal  = !connStr ||
-                 connStr.includes('localhost') ||
-                 connStr.includes('127.0.0.1');
-const sslConfig = isLocal ? false : { rejectUnauthorized: false };
+const sslMode  = (process.env.PGSSLMODE || process.env.PGSSL || '').toLowerCase();
+
+function _isLocalDb(connectionString) {
+  if (!connectionString) return true;
+
+  try {
+    const host = new URL(connectionString).hostname;
+    return host === 'localhost' ||
+           host === '127.0.0.1' ||
+           host === '::1' ||
+           host === 'db';
+  } catch (_) {
+    return connectionString.includes('localhost') ||
+           connectionString.includes('127.0.0.1') ||
+           connectionString.includes('@db:');
+  }
+}
+
+const isLocal  = _isLocalDb(connStr);
+const sslConfig = sslMode === 'disable' || sslMode === 'false' || sslMode === '0'
+  ? false
+  : sslMode === 'require' || sslMode === 'true' || sslMode === '1'
+    ? { rejectUnauthorized: false }
+    : isLocal
+      ? false
+      : { rejectUnauthorized: false };
 
 const pool = new Pool({
   connectionString: connStr || undefined,

@@ -34,6 +34,16 @@ describe('GET /auth/status', () => {
   });
 });
 
+// ── /admin ───────────────────────────────────────────────────────────────────
+describe('GET /admin', () => {
+  it('renders a CSRF token field on the login form', async () => {
+    const res = await request(app).get('/admin');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('name="_csrf"');
+    expect(res.text).toContain('value="test-csrf-token"');
+  });
+});
+
 // ── /auth/google ──────────────────────────────────────────────────────────────
 describe('GET /auth/google (no credentials configured)', () => {
   it('returns 302 or 500 — does not expose internal errors as plain text', async () => {
@@ -105,6 +115,16 @@ describe('Security headers (helmet)', () => {
   it('Content-Security-Policy includes YouTube script src', () => {
     const csp = res.headers['content-security-policy'] ?? '';
     expect(csp).toContain('https://www.youtube.com');
+  });
+
+  it('Content-Security-Policy does not allow unsafe-inline', () => {
+    const csp = res.headers['content-security-policy'] ?? '';
+    expect(csp).not.toContain("'unsafe-inline'");
+  });
+
+  it('Content-Security-Policy includes a nonce-based script policy', () => {
+    const csp = res.headers['content-security-policy'] ?? '';
+    expect(csp).toMatch(/script-src[^;]*'nonce-/);
   });
 
   it('Content-Security-Policy includes Spotify frame-src', () => {

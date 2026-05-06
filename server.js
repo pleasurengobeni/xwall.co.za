@@ -1,14 +1,18 @@
 'use strict';
 require('dotenv').config();
 
+const crypto      = require('crypto');
 const express     = require('express');
 const session     = require('express-session');
 const passport    = require('passport');
 const helmet      = require('helmet');
 const path        = require('path');
 
+const hpp         = require('hpp');
+
 const pool        = require('./db/pool');
 const analytics   = require('./db/analytics');
+const { general: generalLimit } = require('./middleware/rateLimit');
 
 const authRoutes   = require('./routes/auth');
 const apiRoutes    = require('./routes/api');
@@ -19,14 +23,36 @@ require('./config/passport');
 
 const app = express();
 
+// Trust reverse-proxy headers (Nginx sets X-Forwarded-For / X-Forwarded-Proto).
+// TRUST_PROXY=1 in production; leave unset (0) for local dev without a proxy.
+app.set('trust proxy', parseInt(process.env.TRUST_PROXY || '0', 10));
+
+// Per-request CSP nonce for admin pages that render inline <style>/<script> blocks.
+app.use((_req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
+const enableHttpsUpgrade = process.env.CSP_UPGRADE_INSECURE_REQUESTS === '1';
+
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc:            ["'self'"],
-        scriptSrc:             ["'self'", 'https://www.youtube.com', 'https://s.ytimg.com'],
-        styleSrc:              ["'self'", "'unsafe-inline'"],
+        scriptSrc:             [
+          "'self'",
+          (_req, res) => `'nonce-${res.locals.cspNonce}'`,
+          'https://www.youtube.com',
+          'https://s.ytimg.com',
+        ],
+        scriptSrcAttr:         ["'none'"],
+        styleSrc:              [
+          "'self'",
+          (_req, res) => `'nonce-${res.locals.cspNonce}'`,
+        ],
+        styleSrcAttr:          ["'none'"],
         imgSrc:                ["'self'", "data:", "https:"],
         fontSrc:               ["'self'"],
         // Allow YouTube & Spotify iframes for background video and player panel
@@ -39,6 +65,8 @@ app.use(
         objectSrc:             ["'none'"],
         baseUri:               ["'self'"],
         formAction:            ["'self'"],
+        // Enable only after valid HTTPS is configured for the domain.
+        upgradeInsecureRequests: enableHttpsUpgrade ? [] : null,
       },
     },
     // Allow embedding in iframes on the same origin
@@ -46,9 +74,15 @@ app.use(
   })
 );
 
-// ── Body parsing ──────────────────────────────────────────────────────────────
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// ── Body parsing (size limits guard against request flooding) ─────────────────
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: false, limit: '10kb' }));
+
+// Prevent HTTP Parameter Pollution (strips duplicate query/body params)
+app.use(hpp());
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+app.use(generalLimit);
 
 // ── Session ───────────────────────────────────────────────────────────────────
 const sessionSecret = process.env.SESSION_SECRET;
@@ -65,10 +99,13 @@ const sessionConfig = {
   secret:            sessionSecret || 'dev-secret-change-me-in-production-please',
   resave:            false,
   saveUninitialized: false,
+  // Rename away from the default 'connect.sid' to avoid fingerprinting Express.
+  name:   'xws',
+  rolling: true, // reset maxAge on every request to extend active sessions
   cookie: {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'strict',
     maxAge:   24 * 60 * 60 * 1000, // 24 h
   },
 };

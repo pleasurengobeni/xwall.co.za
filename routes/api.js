@@ -3,6 +3,7 @@ const express = require('express');
 const router  = express.Router();
 
 const analytics = require('../db/analytics');
+const { track: trackLimit, weather: weatherLimit } = require('../middleware/rateLimit');
 
 function requireAuth(req, res, next) {
   if (!req.isAuthenticated()) {
@@ -13,7 +14,7 @@ function requireAuth(req, res, next) {
 
 // ── POST /api/track ──────────────────────────────────────────────────────────
 // Records a client-side behavioural event (mode_select, video_select, launch, etc.)
-router.post('/track', async (req, res) => {
+router.post('/track', trackLimit, async (req, res) => {
   const { event, data } = req.body;
   if (!event || typeof event !== 'string' || event.length > 64) {
     return res.status(400).json({ error: 'invalid event' });
@@ -28,24 +29,34 @@ router.post('/track', async (req, res) => {
 });
 
 // ── GET /api/weather ──────────────────────────────────────────────────────────
-// Server-side proxy: IP → coordinates (ipwho.is) → current weather (Open-Meteo).
+// Server-side proxy: IP → coordinates (ip-api.com) → current weather (Open-Meteo).
 // No auth, no browser geolocation permission, no external CSP entries needed.
-router.get('/weather', async (req, res) => {
+router.get('/weather', weatherLimit, async (req, res) => {
   try {
-    const forwarded = req.headers['x-forwarded-for'];
-    const rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
-    const clientIp = rawIp.replace(/^::ffff:/, '');
-    const isLocal  = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '';
+    // req.ip is set correctly when trust proxy is configured in server.js
+    const rawIp   = (req.ip || '').replace(/^::ffff:/, '').trim();
+    const isLocal = rawIp === '127.0.0.1' || rawIp === '::1' || rawIp === '';
 
-    // ip-api.com: omit IP for local dev (uses caller's IP)
-    const geoUrl = isLocal ? 'http://ip-api.com/json' : `http://ip-api.com/json/${clientIp}`;
+    // Validate IP format before embedding in URL to prevent SSRF via injection
+    if (!isLocal && !/^[\da-f.:]+$/i.test(rawIp)) {
+      return res.status(400).json({ error: 'Bad request' });
+    }
+
+    const geoUrl = isLocal ? 'http://ip-api.com/json' : `http://ip-api.com/json/${rawIp}`;
     const geoRes = await fetch(geoUrl);
     const geo    = await geoRes.json();
     if (geo.status !== 'success') throw new Error('geo lookup failed');
 
+    // Validate coordinates before embedding in URL
+    const lat = parseFloat(geo.lat);
+    const lon = parseFloat(geo.lon);
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      throw new Error('invalid coordinates');
+    }
+
     const wxRes = await fetch(
       `https://api.open-meteo.com/v1/forecast` +
-      `?latitude=${geo.lat}&longitude=${geo.lon}` +
+      `?latitude=${lat}&longitude=${lon}` +
       `&current=temperature_2m,weather_code`
     );
     if (!wxRes.ok) throw new Error('weather api failed');

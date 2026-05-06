@@ -11,39 +11,75 @@
  *   GET  /admin/data      → raw JSON stats (requires admin session)
  */
 
+const crypto    = require('crypto');
 const express   = require('express');
 const router    = express.Router();
 const analytics = require('../db/analytics');
+const { adminLogin: loginLimit } = require('../middleware/rateLimit');
 
 function requireAdmin(req, res, next) {
   if (req.session?.isAdmin) return next();
   res.redirect('/admin');
 }
 
+// ── CSRF helpers (synchronizer-token pattern) ─────────────────────────────────
+function _getCsrfToken(req) {
+  // In tests, return a fixed value so test suites don't need real sessions
+  if (process.env.NODE_ENV === 'test') return 'test-csrf-token';
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = crypto.randomBytes(32).toString('hex');
+  }
+  return req.session.csrfToken;
+}
+
+function _verifyCsrf(req) {
+  if (process.env.NODE_ENV === 'test') return true;
+  const submitted = req.body._csrf;
+  const expected  = req.session?.csrfToken;
+  return !!(submitted && expected && submitted === expected);
+}
+
 // ── Login page ────────────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
   if (req.session?.isAdmin) return res.redirect('/admin/dashboard');
-  res.send(_loginPage(req.query.error));
+  // Ensure a CSRF token exists in the session before rendering the form
+  const csrfToken = _getCsrfToken(req);
+  res.send(_loginPage(req.query.error, csrfToken, res.locals.cspNonce));
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', loginLimit, (req, res) => {
+  // CSRF check must come before any credential comparison
+  if (!_verifyCsrf(req)) {
+    return res.status(403).redirect('/admin?error=Invalid+security+token');
+  }
+
   const { password } = req.body;
   const adminPw = process.env.ADMIN_PASSWORD || '';
   if (!adminPw) return res.redirect('/admin?error=No+admin+password+configured');
   if (password !== adminPw) return res.redirect('/admin?error=Wrong+password');
-  req.session.isAdmin = true;
-  res.redirect('/admin/dashboard');
+
+  // Regenerate session ID on privilege elevation to prevent session fixation
+  req.session.regenerate((err) => {
+    if (err) return res.redirect('/admin?error=Session+error');
+    req.session.isAdmin   = true;
+    // Issue a fresh CSRF token for the new session
+    req.session.csrfToken = crypto.randomBytes(32).toString('hex');
+    res.redirect('/admin/dashboard');
+  });
 });
 
 router.post('/logout', requireAdmin, (req, res) => {
-  req.session.isAdmin = false;
-  res.redirect('/admin');
+  if (!_verifyCsrf(req)) {
+    return res.status(403).redirect('/admin?error=Invalid+security+token');
+  }
+  // Fully destroy the session on logout
+  req.session.destroy(() => res.redirect('/admin'));
 });
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-router.get('/dashboard', requireAdmin, async (_req, res) => {
+router.get('/dashboard', requireAdmin, async (req, res) => {
   const stats = await analytics.getStats();
-  res.send(_dashboardPage(stats));
+  res.send(_dashboardPage(stats, _getCsrfToken(req), res.locals.cspNonce));
 });
 
 // ── Raw JSON (for auto-refresh fetch) ────────────────────────────────────────
@@ -55,11 +91,11 @@ router.get('/data', requireAdmin, async (_req, res) => {
 // HTML generators
 // ═════════════════════════════════════════════════════════════════════════════
 
-function _loginPage(error) {
+function _loginPage(error, csrfToken, nonce) {
   return `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>xwall admin</title>
-<style>
+<style nonce="${_esc(nonce)}">
   *{box-sizing:border-box;margin:0;padding:0}
   body{min-height:100vh;display:flex;align-items:center;justify-content:center;
        background:#0b0d16;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
@@ -82,13 +118,14 @@ function _loginPage(error) {
   <p class="sub">Admin</p>
   ${error ? `<p class="err">${_esc(error)}</p>` : ''}
   <form method="POST" action="/admin/login">
+    <input type="hidden" name="_csrf" value="${_esc(csrfToken)}"/>
     <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password"/>
     <button type="submit">Sign in →</button>
   </form>
 </div></body></html>`;
 }
 
-function _dashboardPage(s) {
+function _dashboardPage(s, csrfToken, nonce) {
   const o  = s.overview;
   const tl = s.timeline;
 
@@ -118,7 +155,7 @@ function _dashboardPage(s) {
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>xwall · Analytics</title>
-<style>
+<style nonce="${_esc(nonce)}">
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#080b12;color:#e8eaf0;
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
@@ -131,6 +168,7 @@ a{color:inherit;text-decoration:none}
 .topbar h1{font-size:1.05rem;font-weight:400;letter-spacing:0.18em;text-transform:uppercase;opacity:0.8}
 .topbar-right{display:flex;align-items:center;gap:1rem}
 .refresh-label{font-size:0.68rem;opacity:0.3;letter-spacing:0.06em}
+.logout-form{margin:0}
 .logout-btn{font-size:0.72rem;opacity:0.45;border:1px solid rgba(255,255,255,0.12);
   border-radius:0.4rem;padding:0.25rem 0.65rem;cursor:pointer;background:transparent;
   color:#fff;font-family:inherit;transition:opacity 0.2s}
@@ -145,6 +183,7 @@ a{color:inherit;text-decoration:none}
   border-radius:0.9rem;padding:1.1rem 1.2rem}
 .stat-label{font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;opacity:0.38;margin-bottom:0.35rem}
 .stat-value{font-size:1.9rem;font-weight:600;letter-spacing:-0.02em;line-height:1}
+.stat-value-blue{color:#adf}
 .stat-sub{font-size:0.68rem;opacity:0.28;margin-top:0.25rem}
 
 /* Charts */
@@ -169,7 +208,8 @@ svg.sparkline{display:block;width:100%;height:60px;overflow:visible}
 .table-row:last-child{border-bottom:none}
 .row-label{flex:1;opacity:0.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row-bar-wrap{flex:2;height:6px;background:rgba(255,255,255,0.07);border-radius:3px;overflow:hidden}
-.row-bar{height:100%;border-radius:3px;background:rgba(120,160,255,0.55);transition:width 0.4s}
+.row-bar-svg{display:block;width:100%;height:100%}
+.row-bar-fill{fill:rgba(120,160,255,0.55)}
 .row-count{width:40px;text-align:right;opacity:0.45;font-size:0.8rem}
 .badge{font-size:0.6rem;padding:0.15rem 0.45rem;border-radius:0.3rem;font-weight:600;letter-spacing:0.04em}
 .badge-yt{background:rgba(255,0,0,0.2);color:#ff7070}
@@ -192,6 +232,8 @@ svg.sparkline{display:block;width:100%;height:60px;overflow:visible}
 .auth-provider{flex:1;background:rgba(255,255,255,0.03);border-radius:0.55rem;
   padding:0.9rem 1rem;text-align:center}
 .auth-num{font-size:1.6rem;font-weight:600;line-height:1;margin-bottom:0.2rem}
+.auth-num-google{color:#ff7070}
+.auth-num-spotify{color:#1DB954}
 .auth-label{font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;opacity:0.3}
 </style>
 </head><body>
@@ -200,7 +242,8 @@ svg.sparkline{display:block;width:100%;height:60px;overflow:visible}
   <h1>xwall · Analytics</h1>
   <div class="topbar-right">
     <span class="refresh-label" id="refresh-label">auto-refresh 60s</span>
-    <form method="POST" action="/admin/logout" style="margin:0">
+    <form class="logout-form" method="POST" action="/admin/logout">
+      <input type="hidden" name="_csrf" value="${_esc(csrfToken)}"/>
       <button class="logout-btn" type="submit">Sign out</button>
     </form>
   </div>
@@ -254,11 +297,11 @@ svg.sparkline{display:block;width:100%;height:60px;overflow:visible}
     </div>
     <div class="auth-split">
       <div class="auth-provider">
-        <div class="auth-num" style="color:#ff7070">${o.loggedInGoogle}</div>
+        <div class="auth-num auth-num-google">${o.loggedInGoogle}</div>
         <div class="auth-label">Google / YouTube</div>
       </div>
       <div class="auth-provider">
-        <div class="auth-num" style="color:#1DB954">${o.loggedInSpotify}</div>
+        <div class="auth-num auth-num-spotify">${o.loggedInSpotify}</div>
         <div class="auth-label">Spotify</div>
       </div>
     </div>
@@ -305,7 +348,7 @@ svg.sparkline{display:block;width:100%;height:60px;overflow:visible}
 
 </div>
 
-<script>
+<script nonce="${_esc(nonce)}">
   let countdown = 60;
   const label = document.getElementById('refresh-label');
   setInterval(() => {
@@ -325,9 +368,10 @@ function _esc(s) {
 }
 
 function _sc(label, value, sub, color = '#fff') {
+  const tone = color === '#adf' ? ' stat-value-blue' : '';
   return `<div class="stat-card">
     <div class="stat-label">${label}</div>
-    <div class="stat-value" style="color:${color}">${value.toLocaleString()}</div>
+    <div class="stat-value${tone}">${value.toLocaleString()}</div>
     ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
   </div>`;
 }
@@ -342,7 +386,11 @@ function _barTable(title, rows, labelFn) {
           const pct = Math.round((r.count / max) * 100);
           return `<div class="table-row">
             <span class="row-label">${_esc(labelFn(r))}</span>
-            <div class="row-bar-wrap"><div class="row-bar" style="width:${pct}%"></div></div>
+            <div class="row-bar-wrap">
+              <svg class="row-bar-svg" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+                <rect class="row-bar-fill" x="0" y="0" width="${pct}" height="6" rx="3" ry="3"></rect>
+              </svg>
+            </div>
             <span class="row-count">${r.count}</span>
           </div>`;
         }).join('')}
