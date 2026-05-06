@@ -30,7 +30,7 @@ services:
         condition: service_healthy
     # Bind only to loopback so only Nginx (on the same host/network) can reach it.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3002:3000"
     env_file:
       - .env
     environment:
