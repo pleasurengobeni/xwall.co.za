@@ -188,6 +188,15 @@ const Wallpaper = (() => {
     _currentVideoId = nextId;
     bgVideo.innerHTML = '';
 
+    // Guard against cases where the iframe initializes but never emits onReady.
+    _clearStartupRecoveryTimer();
+    _startupRecoveryTimer = setTimeout(() => {
+      if (token !== _loadToken) return;
+      if (bgVideo.classList.contains('loaded')) return;
+      _destroyPlayer();
+      _tryLoadCandidate(mode, candidates, token);
+    }, BG_STARTUP_RECOVERY_MS);
+
     _ytPlayer = new YT.Player('bg-video', {
       videoId: nextId,
       width: '100%',
@@ -210,14 +219,6 @@ const Wallpaper = (() => {
           // Start muted for reliable autoplay, then unmute when allowed.
           event.target.mute();
           event.target.playVideo();
-
-          _clearStartupRecoveryTimer();
-          _startupRecoveryTimer = setTimeout(() => {
-            if (token !== _loadToken) return;
-            if (bgVideo.classList.contains('loaded')) return;
-            _destroyPlayer();
-            _tryLoadCandidate(mode, candidates, token);
-          }, BG_STARTUP_RECOVERY_MS);
 
           clearTimeout(fadeTimer);
           fadeTimer = setTimeout(() => bgVideo.classList.add('loaded'), 700);
