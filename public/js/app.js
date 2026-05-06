@@ -335,6 +335,16 @@
 
     _track('launch', { mode: selectedMode, video: selectedVideoIds[selectedMode] || null });
     Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: false });
+
+    // Force a second autostart attempt if the first initialization stalls.
+    setTimeout(() => {
+      const bg = document.getElementById('bg-video');
+      if (!bg || viewMain.classList.contains('hidden')) return;
+      if (!bg.classList.contains('loaded')) {
+        Wallpaper.set(selectedMode, _orderedVideoIdsForMode(selectedMode), { muted: false });
+      }
+    }, 2200);
+
     WakeLock.request();
     WakeLock.startNetwork();
 
