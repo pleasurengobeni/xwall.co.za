@@ -213,12 +213,14 @@
   }
 
   function _orderedVideoIdsForMode(mode) {
-    const library = suggestedVideoLibrary[mode]?.length
+    const suggested = suggestedVideoLibrary[mode]?.length
       ? suggestedVideoLibrary[mode]
-      : FALLBACK_VIDEO_LIBRARY[mode] || [];
+      : [];
+    const fallback = FALLBACK_VIDEO_LIBRARY[mode] || [];
     const preferredId = selectedVideoIds[mode];
     return [preferredId]
-      .concat(library.map((video) => video.id))
+      .concat(suggested.map((video) => video.id))
+      .concat(fallback.map((video) => video.id))
       .filter((id, index, arr) => id && arr.indexOf(id) === index);
   }
 

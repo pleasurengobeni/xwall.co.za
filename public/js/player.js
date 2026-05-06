@@ -25,6 +25,11 @@ const Player = (() => {
   let _isPlaying = false;
   let _ytApiReady = !!(window.YT && window.YT.Player);
   let _contextTitle = '';
+  let _ytRecoverTimer = null;
+  let _ytSkipAttempts = 0;
+
+  const YT_STARTUP_RECOVERY_MS = 3500;
+  const YT_MAX_SKIP_ATTEMPTS = 6;
 
   // ── YouTube IFrame API loader ─────────────────────────────────────────────
   // Called once; resolved when window.onYouTubeIframeAPIReady fires
@@ -73,6 +78,37 @@ const Player = (() => {
     if (title) _setCurrentTitle(title);
   }
 
+  function _clearYtRecoveryTimer() {
+    if (_ytRecoverTimer) {
+      clearTimeout(_ytRecoverTimer);
+      _ytRecoverTimer = null;
+    }
+  }
+
+  function _scheduleYtStartupRecovery() {
+    _clearYtRecoveryTimer();
+    _ytRecoverTimer = setTimeout(() => {
+      if (_provider !== 'youtube' || !_ytPlayer || _isPlaying) return;
+      if (_ytSkipAttempts >= 2) return;
+      _ytSkipAttempts += 1;
+      _setCurrentTitle('Trying next track...');
+      try { _ytPlayer.nextVideo(); } catch (_) {}
+      try { _ytPlayer.playVideo(); } catch (_) {}
+      _scheduleYtStartupRecovery();
+    }, YT_STARTUP_RECOVERY_MS);
+  }
+
+  function _recoverFromYoutubeError() {
+    if (_provider !== 'youtube' || !_ytPlayer) return false;
+    if (_ytSkipAttempts >= YT_MAX_SKIP_ATTEMPTS) return false;
+    _ytSkipAttempts += 1;
+    _setCurrentTitle('Trying next track...');
+    try { _ytPlayer.nextVideo(); } catch (_) {}
+    try { _ytPlayer.playVideo(); } catch (_) {}
+    _scheduleYtStartupRecovery();
+    return true;
+  }
+
   // ── URL parser — returns { provider, id, title } or null ─────────────────
   function parseUrl(raw) {
     const url = raw.trim();
@@ -114,6 +150,8 @@ const Player = (() => {
   async function _loadYoutube(playlistId) {
     spEmbed.src = '';
     spEmbed.classList.add('hidden');
+    _ytSkipAttempts = 0;
+    _clearYtRecoveryTimer();
 
     await _ensureYtApi();
 
@@ -138,6 +176,7 @@ const Player = (() => {
         onReady:       (e) => {
           _refreshYoutubeCurrentTitle();
           e.target.playVideo();
+          _scheduleYtStartupRecovery();
         },
         onStateChange: (e) => {
           const s = e.data;
@@ -148,9 +187,14 @@ const Player = (() => {
           ) {
             _refreshYoutubeCurrentTitle();
           }
+          if (s === YT.PlayerState.PLAYING) {
+            _ytSkipAttempts = 0;
+            _clearYtRecoveryTimer();
+          }
           _setPlaying(s === YT.PlayerState.PLAYING);
         },
         onError: () => {
+          if (_recoverFromYoutubeError()) return;
           _setPlaying(false);
           _setCurrentTitle(_contextTitle || 'Playback unavailable');
         },
@@ -217,6 +261,8 @@ const Player = (() => {
 
   // ── Stop / tear down ──────────────────────────────────────────────────────
   function stop(hidePanel = true) {
+    _clearYtRecoveryTimer();
+    _ytSkipAttempts = 0;
     if (_ytPlayer) { _ytPlayer.stopVideo(); _ytPlayer.destroy(); _ytPlayer = null; }
     spEmbed.src = '';
     spEmbed.classList.add('hidden');

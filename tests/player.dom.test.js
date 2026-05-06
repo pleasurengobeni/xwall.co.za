@@ -221,8 +221,10 @@ describe('Spotify transport — postMessage', () => {
 // ── YouTube transport controls ────────────────────────────────────────────────
 describe('YouTube transport controls', () => {
   let ytInstance;
+  let ytEvents;
   beforeEach(async () => {
     YT.Player.mockImplementationOnce((_el, opts) => {
+      ytEvents = opts.events;
       ytInstance = {
         playVideo:     jest.fn(),
         pauseVideo:    jest.fn(),
@@ -252,5 +254,12 @@ describe('YouTube transport controls', () => {
     document.getElementById('tp-stop').click();
     expect(ytInstance.stopVideo).toHaveBeenCalled();
     expect(ytInstance.destroy).toHaveBeenCalled();
+  });
+
+  it('onError attempts to recover by skipping to next video', () => {
+    ytEvents.onError();
+    expect(ytInstance.nextVideo).toHaveBeenCalled();
+    expect(ytInstance.playVideo).toHaveBeenCalled();
+    expect(document.getElementById('transport-current').textContent).toBe('Trying next track...');
   });
 });
