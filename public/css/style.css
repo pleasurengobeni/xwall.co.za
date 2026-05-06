@@ -535,8 +535,9 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 
 /* ── Privacy policy page ───────────────────────────────────────────────────── */
 .privacy-page {
-  min-height: 100vh;
+  height: 100vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   align-items: flex-start;
   justify-content: center;
