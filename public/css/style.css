@@ -349,7 +349,6 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 }
 
 .home-content {
-  position: relative;
   z-index: 1;
   min-height: 100vh;
   min-height: 100dvh;
@@ -635,7 +634,7 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 
 #home-login-buttons,
 #home-user-info {
-  position: absolute;
+  position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + 0.85rem);
   right: calc(env(safe-area-inset-right, 0px) + 0.9rem);
   z-index: 35;
