@@ -46,7 +46,6 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   z-index: 0;
   overflow: hidden;
   background: #000;
-  pointer-events: none;
 }
 
 /* CSS gradient fallback — always rendered beneath the video */
@@ -54,7 +53,6 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   position: absolute;
   inset: 0;
   transition: opacity 0.8s ease;
-  pointer-events: none;
 }
 
 .css-bg.fireplace {
