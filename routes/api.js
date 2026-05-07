@@ -121,22 +121,42 @@ router.get('/playlists', requireAuth, async (req, res) => {
     }
 
     if (provider === 'google') {
-      const response = await fetch(
-        'https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=20',
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        return res.status(response.status).json({ error: err.error?.message || 'YouTube API error' });
+      const authHeader = { Authorization: `Bearer ${accessToken}` };
+
+      // Fetch the authenticated channel identity in parallel with playlists
+      const [channelRes, playlistRes] = await Promise.all([
+        fetch(
+          'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=1',
+          { headers: authHeader }
+        ),
+        fetch(
+          'https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50',
+          { headers: authHeader }
+        ),
+      ]);
+
+      if (!playlistRes.ok) {
+        const err = await playlistRes.json().catch(() => ({}));
+        return res.status(playlistRes.status).json({ error: err.error?.message || 'YouTube API error' });
       }
-      const data = await response.json();
-      const playlists = (data.items || []).map((p) => ({
+
+      const [channelData, playlistData] = await Promise.all([
+        channelRes.ok ? channelRes.json() : Promise.resolve(null),
+        playlistRes.json(),
+      ]);
+
+      const channelSnippet = channelData?.items?.[0]?.snippet;
+      const channelInfo = channelSnippet
+        ? { title: channelSnippet.title, customUrl: channelSnippet.customUrl ?? null }
+        : null;
+
+      const playlists = (playlistData.items || []).map((p) => ({
         id:       p.id,
         name:     p.snippet?.title ?? 'Untitled',
         image:    p.snippet?.thumbnails?.default?.url ?? null,
         provider: 'youtube',
       }));
-      return res.json({ playlists });
+      return res.json({ playlists, channelInfo });
     }
 
     res.status(400).json({ error: 'Unknown provider' });

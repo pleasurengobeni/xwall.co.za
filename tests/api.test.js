@@ -106,7 +106,7 @@ describe('playlist shaping — YouTube', () => {
   }
 
   it('maps YouTube items to { id, name, image, provider }', async () => {
-    const items = [
+    const playlistItems = [
       {
         id: 'PL123',
         snippet: {
@@ -115,10 +115,10 @@ describe('playlist shaping — YouTube', () => {
         },
       },
     ];
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ items }),
-    });
+    const channelItems = [{ snippet: { title: 'Lofi Beats', customUrl: null } }];
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: channelItems }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: playlistItems }) });
 
     const { req, res, json } = makeReqRes({ provider: 'google', accessToken: 'tok' });
     const layer = router.stack.find((l) => l.route && l.route.path === '/playlists');
@@ -129,15 +129,16 @@ describe('playlist shaping — YouTube', () => {
       playlists: [
         { id: 'PL123', name: 'Lofi Beats', image: 'https://img.yt.com/t.jpg', provider: 'youtube' },
       ],
+      channelInfo: { title: 'Lofi Beats', customUrl: null },
     });
   });
 
   it('handles missing thumbnails gracefully (image: null)', async () => {
-    const items = [{ id: 'PL999', snippet: { title: 'No Thumb' } }];
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ items }),
-    });
+    const playlistItems = [{ id: 'PL999', snippet: { title: 'No Thumb' } }];
+    const channelItems = [{ snippet: { title: 'No Thumb', customUrl: null } }];
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: channelItems }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: playlistItems }) });
 
     const { req, res, json } = makeReqRes({ provider: 'google', accessToken: 'tok' });
     const layer = router.stack.find((l) => l.route && l.route.path === '/playlists');
@@ -146,21 +147,21 @@ describe('playlist shaping — YouTube', () => {
 
     expect(json).toHaveBeenCalledWith({
       playlists: [{ id: 'PL999', name: 'No Thumb', image: null, provider: 'youtube' }],
+      channelInfo: { title: 'No Thumb', customUrl: null },
     });
   });
 
   it('handles empty items array', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ items: [] }),
-    });
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) });
 
     const { req, res, json } = makeReqRes({ provider: 'google', accessToken: 'tok' });
     const layer = router.stack.find((l) => l.route && l.route.path === '/playlists');
     const handlers = layer.route.stack.map((s) => s.handle);
     await handlers[1](req, res, jest.fn());
 
-    expect(json).toHaveBeenCalledWith({ playlists: [] });
+    expect(json).toHaveBeenCalledWith({ playlists: [], channelInfo: null });
   });
 
   it('returns 400 for unknown provider', async () => {

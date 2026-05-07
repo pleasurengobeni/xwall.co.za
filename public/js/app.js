@@ -348,9 +348,18 @@
       const payload = await res.json();
       const list = Array.isArray(payload?.playlists) ? payload.playlists : [];
       if (!list.length) {
-        const emptyCopy = authUser?.provider === 'google'
-          ? 'No playlists found for this YouTube channel. Try sign out, then sign in again and choose the Google/Brand account that owns your playlists.'
-          : 'No playlists found for this account yet.';
+        let emptyCopy;
+        if (authUser?.provider === 'google') {
+          const ch = payload?.channelInfo;
+          const chName = ch?.title ? `"${ch.title}"` : 'your YouTube channel';
+          emptyCopy =
+            `No playlists found for ${chName}. ` +
+            `If your playlists are on a different YouTube channel or Brand Account, ` +
+            `sign out and sign in again — then pick the correct Google account that owns those playlists. ` +
+            `Or paste a playlist URL directly below.`;
+        } else {
+          emptyCopy = 'No playlists found for this account yet.';
+        }
         savedPlaylistsEl.innerHTML =
           '<p class="saved-playlists-label">Your playlists</p>' +
           `<p class="saved-playlists-empty">${emptyCopy}</p>`;
