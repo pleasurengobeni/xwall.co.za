@@ -581,6 +581,71 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 .playlist-hint.hint-sp  { color: #1DB954;  opacity: 0.8; }
 .playlist-hint.hint-err { color: #ff6060;  opacity: 0.8; }
 
+/* ── Playlist search dropdown ────────────────────────────────────────────── */
+.playlist-dropdown {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0; right: 0;
+  background: rgba(18, 18, 28, 0.97);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 1rem;
+  overflow: hidden;
+  z-index: 200;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+}
+
+.pdrop-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background: none;
+  border: none;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.pdrop-item:hover,
+.pdrop-item:focus { background: rgba(255,255,255,0.08); outline: none; }
+.pdrop-item + .pdrop-item { border-top: 1px solid rgba(255,255,255,0.05); }
+
+.pdrop-thumb {
+  width: 36px; height: 36px;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.pdrop-thumb-empty {
+  width: 36px; height: 36px;
+  border-radius: 0.4rem;
+  background: rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+.pdrop-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdrop-badge {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.45rem;
+  border-radius: 0.35rem;
+  flex-shrink: 0;
+}
+.pdrop-badge-yt { background: rgba(255,40,40,0.2);  color: #ff7070; }
+.pdrop-badge-sp { background: rgba(29,185,84,0.2);  color: #1db954; }
+
 /* ── Launch button ─────────────────────────────────────────────────────────── */
 .launch-btn {
   display: inline-flex;

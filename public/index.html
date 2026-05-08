@@ -88,14 +88,17 @@
           <input
             id="playlist-url"
             class="playlist-url-input"
-            type="url"
+            type="text"
             inputmode="url"
             autocomplete="off"
             spellcheck="false"
-            placeholder="Paste a YouTube or Spotify playlist link… (optional)"
-            aria-label="Playlist URL"
+            placeholder="Paste a link or search your playlists…"
+            aria-label="Playlist URL or search"
+            aria-autocomplete="list"
+            aria-controls="playlist-dropdown"
           />
-          <button id="playlist-clear" class="playlist-clear hidden" type="button" aria-label="Clear URL">✕</button>
+          <button id="playlist-clear" class="playlist-clear hidden" type="button" aria-label="Clear">✕</button>
+          <div id="playlist-dropdown" class="playlist-dropdown hidden" role="listbox" aria-label="Matching playlists"></div>
         </div>
         <p id="playlist-hint" class="playlist-hint">Supports YouTube &amp; Spotify playlists</p>
         <!-- Saved playlists shown when signed in with Google -->

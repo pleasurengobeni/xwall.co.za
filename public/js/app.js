@@ -62,20 +62,22 @@
   const viewHome         = document.getElementById('view-home');
   const viewMain         = document.getElementById('view-main');
   const cards            = document.querySelectorAll('.wpc');
-  const urlInput         = document.getElementById('playlist-url');
-  const urlClear         = document.getElementById('playlist-clear');
-  const urlHint          = document.getElementById('playlist-hint');
-  const launchBtn        = document.getElementById('launch-btn');
-  const backBtn          = document.getElementById('back-btn');
-  const videoLibraryEl   = document.getElementById('video-library');
-  const savedPlaylistsEl = document.getElementById('saved-playlists');
+  const urlInput           = document.getElementById('playlist-url');
+  const urlClear           = document.getElementById('playlist-clear');
+  const urlHint            = document.getElementById('playlist-hint');
+  const playlistDropdownEl = document.getElementById('playlist-dropdown');
+  const launchBtn          = document.getElementById('launch-btn');
+  const backBtn            = document.getElementById('back-btn');
+  const videoLibraryEl     = document.getElementById('video-library');
+  const savedPlaylistsEl   = document.getElementById('saved-playlists');
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let selectedMode   = null;
-  let parsedPlaylist = null;
-  let uiActiveTimer  = null;
-  let authUser       = null;
+  let selectedMode      = null;
+  let parsedPlaylist    = null;
+  let uiActiveTimer     = null;
+  let authUser          = null;
   let selectedClockStyle = 'digital';
+  let _savedPlaylistsData = [];
 
   const suggestedVideoLibrary = {};
   const suggestionRequested   = new Set();
@@ -306,6 +308,59 @@
       .filter((id, index, arr) => id && arr.indexOf(id) === index);
   }
 
+  // ── Playlist search dropdown ─────────────────────────────────────────────
+  function _showPlaylistDropdown(query) {
+    if (!playlistDropdownEl || !_savedPlaylistsData.length) return;
+    const q = query.toLowerCase();
+    const matches = _savedPlaylistsData.filter((pl) => pl.name.toLowerCase().includes(q));
+    if (!matches.length) { _hidePlaylistDropdown(); return; }
+    playlistDropdownEl.innerHTML = '';
+    matches.slice(0, 8).forEach((pl) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pdrop-item';
+      btn.setAttribute('role', 'option');
+      if (pl.image) {
+        const img = document.createElement('img');
+        img.src = pl.image; img.className = 'pdrop-thumb'; img.alt = ''; img.loading = 'lazy';
+        btn.appendChild(img);
+      } else {
+        const sp = document.createElement('span'); sp.className = 'pdrop-thumb-empty';
+        btn.appendChild(sp);
+      }
+      const nameEl = document.createElement('span');
+      nameEl.className = 'pdrop-name';
+      nameEl.textContent = pl.name;
+      btn.appendChild(nameEl);
+      const badge = document.createElement('span');
+      badge.className = `pdrop-badge ${pl.provider === 'spotify' ? 'pdrop-badge-sp' : 'pdrop-badge-yt'}`;
+      badge.textContent = pl.provider === 'spotify' ? 'Spotify' : 'YouTube';
+      btn.appendChild(badge);
+      btn.addEventListener('click', () => _selectDropdownPlaylist(pl));
+      playlistDropdownEl.appendChild(btn);
+    });
+    playlistDropdownEl.classList.remove('hidden');
+  }
+
+  function _hidePlaylistDropdown() {
+    if (playlistDropdownEl) playlistDropdownEl.classList.add('hidden');
+  }
+
+  function _selectDropdownPlaylist(pl) {
+    savedPlaylistsEl?.querySelectorAll('.spl-item').forEach((b) => b.classList.remove('active'));
+    parsedPlaylist = { provider: pl.provider, type: pl.provider === 'spotify' ? 'playlist' : undefined, id: pl.id, title: pl.name };
+    urlInput.value = '';
+    urlClear.classList.add('hidden');
+    urlHint.textContent = `\u2713 ${pl.name} selected`;
+    urlHint.className   = `playlist-hint ${pl.provider === 'spotify' ? 'hint-sp' : 'hint-yt'}`;
+    _hidePlaylistDropdown();
+  }
+
+  // Close dropdown when clicking outside the input row
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.playlist-input-row')) _hidePlaylistDropdown();
+  });
+
   // ── Playlist URL input ───────────────────────────────────────────────────
   urlInput.addEventListener('input', () => {
     const raw = urlInput.value.trim();
@@ -314,6 +369,7 @@
       urlClear.classList.add('hidden');
       urlHint.textContent = '';
       urlHint.className   = 'playlist-hint';
+      _hidePlaylistDropdown();
       return;
     }
     urlClear.classList.remove('hidden');
@@ -321,6 +377,11 @@
     if (parsedPlaylist) {
       urlHint.textContent = `\u2713 ${parsedPlaylist.provider === 'youtube' ? 'YouTube' : 'Spotify'} playlist detected`;
       urlHint.className   = 'playlist-hint ok';
+      _hidePlaylistDropdown();
+    } else if (_savedPlaylistsData.length) {
+      urlHint.textContent = '';
+      urlHint.className   = 'playlist-hint';
+      _showPlaylistDropdown(raw);
     } else {
       urlHint.textContent = 'Paste a YouTube or Spotify playlist URL';
       urlHint.className   = 'playlist-hint err';
@@ -333,6 +394,7 @@
     urlHint.textContent = '';
     urlHint.className   = 'playlist-hint';
     urlClear.classList.add('hidden');
+    _hidePlaylistDropdown();
     urlInput.focus();
   });
 
@@ -343,6 +405,7 @@
       const res = await fetch('/api/playlists');
       const payload = await res.json();
       const list = Array.isArray(payload?.playlists) ? payload.playlists : [];
+      _savedPlaylistsData = list;
       if (!list.length) {
         let emptyCopy;
         if (authUser?.provider === 'google') {
@@ -417,6 +480,8 @@
       savedPlaylistsEl.classList.add('hidden');
       savedPlaylistsEl.innerHTML = '';
     }
+    _savedPlaylistsData = [];
+    _hidePlaylistDropdown();
   }
 
   // ── Launch → go to main view ──────────────────────────────────────────────
