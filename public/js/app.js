@@ -26,32 +26,28 @@
   // ── Fallback ambient library (used if API suggestions are unavailable) ───
   const FALLBACK_VIDEO_LIBRARY = {
     fireplace: [
-      { id: 'ZY3J3Y_OU0w', title: 'Classic Fireplace' },
       { id: 'L_LUpnjgPso', title: 'Cozy Hearth' },
-      { id: 'IyH8bDHBFgA', title: 'Nordic Fireplace' },
-      { id: 'kZbTznKlFqc', title: 'Winter Fire' },
-      { id: 'ruDjKAdtHmk', title: 'Log Cabin Fire' },
+      { id: 'q76bMs-NwRk', title: 'Warm Ambience' },
+      { id: 'V1bFr2SWP1I', title: 'Cabin Stream + Fire' },
+      { id: 'BHACKCNDMW8', title: 'Night Fireplace Atmosphere' },
     ],
     rain: [
       { id: 'q76bMs-NwRk', title: 'Rain on Window' },
-      { id: 'CfHpO6DrfbA', title: 'Heavy Downpour' },
       { id: 'nDq6TstdEi8', title: 'Rainy Night' },
-      { id: 'BOUTfqTsnlo', title: 'Rain & Thunder' },
-      { id: 'iK0E4PVuJTE', title: 'Gentle Rain' },
+      { id: 'V1bFr2SWP1I', title: 'Rain by the River' },
+      { id: '2OEL4P1Rz04', title: 'Waterfall Mist' },
     ],
     river: [
       { id: 'V1bFr2SWP1I', title: 'Mountain Stream' },
-      { id: 'qgPbsGRCoQ8', title: 'Forest River' },
-      { id: 'YsUUdAH3gy8', title: 'Babbling Brook' },
       { id: '2OEL4P1Rz04', title: 'Waterfall' },
-      { id: 'SmVAWKfJ4Go', title: 'Tropical River' },
+      { id: 'nDq6TstdEi8', title: 'River at Night' },
+      { id: 'q76bMs-NwRk', title: 'Calm Brook' },
     ],
     scenic: [
       { id: 'BHACKCNDMW8', title: 'Deep Space Drift' },
       { id: 'DWcJFNfaw9c', title: 'Stars and Nebulae' },
-      { id: '1ZYbU82uUws', title: 'Orbit View' },
-      { id: 'XMTCjzAePXs', title: 'Galactic Horizon' },
       { id: '3sL0omwElxw', title: 'Cosmic Silence' },
+      { id: 'V1bFr2SWP1I', title: 'Orbit View' },
     ],
   };
 

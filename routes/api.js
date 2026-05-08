@@ -13,6 +13,39 @@ const MODE_SEARCH_QUERIES = {
   space:     'outer space ambience stars galaxy earth 4k',
 };
 
+const MODE_FALLBACK_VIDEOS = {
+  fireplace: [
+    { id: 'L_LUpnjgPso', title: 'Cozy Hearth', thumbnail: 'https://i.ytimg.com/vi/L_LUpnjgPso/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'q76bMs-NwRk', title: 'Warm Ambience', thumbnail: 'https://i.ytimg.com/vi/q76bMs-NwRk/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'V1bFr2SWP1I', title: 'Cabin Stream + Fire', thumbnail: 'https://i.ytimg.com/vi/V1bFr2SWP1I/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'BHACKCNDMW8', title: 'Night Fireplace Atmosphere', thumbnail: 'https://i.ytimg.com/vi/BHACKCNDMW8/mqdefault.jpg', durationLabel: '30+ min' },
+  ],
+  rain: [
+    { id: 'q76bMs-NwRk', title: 'Rain on Window', thumbnail: 'https://i.ytimg.com/vi/q76bMs-NwRk/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'nDq6TstdEi8', title: 'Rainy Night', thumbnail: 'https://i.ytimg.com/vi/nDq6TstdEi8/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'V1bFr2SWP1I', title: 'Rain by the River', thumbnail: 'https://i.ytimg.com/vi/V1bFr2SWP1I/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: '2OEL4P1Rz04', title: 'Waterfall Mist', thumbnail: 'https://i.ytimg.com/vi/2OEL4P1Rz04/mqdefault.jpg', durationLabel: '30+ min' },
+  ],
+  river: [
+    { id: 'V1bFr2SWP1I', title: 'Mountain Stream', thumbnail: 'https://i.ytimg.com/vi/V1bFr2SWP1I/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: '2OEL4P1Rz04', title: 'Waterfall', thumbnail: 'https://i.ytimg.com/vi/2OEL4P1Rz04/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'nDq6TstdEi8', title: 'River at Night', thumbnail: 'https://i.ytimg.com/vi/nDq6TstdEi8/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'q76bMs-NwRk', title: 'Calm Brook', thumbnail: 'https://i.ytimg.com/vi/q76bMs-NwRk/mqdefault.jpg', durationLabel: '30+ min' },
+  ],
+  scenic: [
+    { id: 'BHACKCNDMW8', title: 'Deep Space Drift', thumbnail: 'https://i.ytimg.com/vi/BHACKCNDMW8/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'DWcJFNfaw9c', title: 'Stars and Nebulae', thumbnail: 'https://i.ytimg.com/vi/DWcJFNfaw9c/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: '3sL0omwElxw', title: 'Cosmic Silence', thumbnail: 'https://i.ytimg.com/vi/3sL0omwElxw/mqdefault.jpg', durationLabel: '30+ min' },
+    { id: 'V1bFr2SWP1I', title: 'Orbit Window', thumbnail: 'https://i.ytimg.com/vi/V1bFr2SWP1I/mqdefault.jpg', durationLabel: '30+ min' },
+  ],
+};
+
+function fallbackVideosForMode(mode, limit) {
+  const canonicalMode = mode === 'space' ? 'scenic' : mode;
+  const source = MODE_FALLBACK_VIDEOS[canonicalMode] || [];
+  return source.slice(0, limit).map((item) => ({ ...item }));
+}
+
 function parseIso8601DurationToSeconds(value) {
   const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i.exec(value || '');
   if (!match) return 0;
@@ -175,15 +208,17 @@ router.get('/videos/suggestions', async (req, res) => {
     return res.status(400).json({ error: 'Unsupported mode' });
   }
 
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    return res.status(503).json({ error: 'Video suggestions unavailable' });
-  }
-
   const requestedLimit = parseInt(req.query.limit, 10);
   const limit = Number.isFinite(requestedLimit)
     ? Math.min(Math.max(requestedLimit, 1), 12)
     : 8;
+
+  const fallbackPayload = () => ({ videos: fallbackVideosForMode(mode, limit), fallback: true });
+
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    return res.json(fallbackPayload());
+  }
 
   try {
     const searchParams = new URLSearchParams({
@@ -200,7 +235,7 @@ router.get('/videos/suggestions', async (req, res) => {
 
     const searchRes = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
     if (!searchRes.ok) {
-      return res.status(502).json({ error: 'YouTube search failed' });
+      return res.json(fallbackPayload());
     }
 
     const searchData = await searchRes.json();
@@ -208,7 +243,7 @@ router.get('/videos/suggestions', async (req, res) => {
       .map((item) => item?.id?.videoId)
       .filter(Boolean);
 
-    if (!videoIds.length) return res.json({ videos: [] });
+    if (!videoIds.length) return res.json(fallbackPayload());
 
     const detailsParams = new URLSearchParams({
       key:  apiKey,
@@ -219,7 +254,7 @@ router.get('/videos/suggestions', async (req, res) => {
 
     const detailsRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?${detailsParams}`);
     if (!detailsRes.ok) {
-      return res.status(502).json({ error: 'YouTube details lookup failed' });
+      return res.json(fallbackPayload());
     }
 
     const detailsData = await detailsRes.json();
@@ -242,10 +277,11 @@ router.get('/videos/suggestions', async (req, res) => {
       .slice(0, limit)
       .map(({ durationSecs, ...rest }) => rest);
 
-    return res.json({ videos });
+    if (!videos.length) return res.json(fallbackPayload());
+    return res.json({ videos, fallback: false });
   } catch (err) {
     console.error('Video suggestion error:', err.message);
-    return res.status(500).json({ error: 'Failed to fetch suggestions' });
+    return res.json(fallbackPayload());
   }
 });
 

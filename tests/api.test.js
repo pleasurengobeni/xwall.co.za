@@ -232,6 +232,7 @@ describe('video suggestions', () => {
     const res = await request(app).get('/api/videos/suggestions?mode=scenic&limit=5');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
+      fallback: false,
       videos: [
         {
           id: 'long1',
@@ -247,5 +248,18 @@ describe('video suggestions', () => {
     const res = await request(app).get('/api/videos/suggestions?mode=unknown');
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Unsupported mode' });
+  });
+
+  it('returns fallback suggestions when YouTube search fails', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({ ok: false, status: 403 });
+
+    const res = await request(app).get('/api/videos/suggestions?mode=fireplace&limit=4');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.videos)).toBe(true);
+    expect(res.body.videos.length).toBeGreaterThan(0);
+    expect(res.body.fallback).toBe(true);
+    expect(res.body.videos[0]).toHaveProperty('id');
+    expect(res.body.videos[0]).toHaveProperty('title');
+    expect(res.body.videos[0]).toHaveProperty('thumbnail');
   });
 });
