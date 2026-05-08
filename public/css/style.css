@@ -646,6 +646,15 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 .pdrop-badge-yt { background: rgba(255,40,40,0.2);  color: #ff7070; }
 .pdrop-badge-sp { background: rgba(29,185,84,0.2);  color: #1db954; }
 
+.pdrop-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.35;
+  padding: 0.55rem 1rem 0.3rem;
+}
+.pdrop-searching { opacity: 0.5; font-style: italic; }
+
 /* ── Launch button ─────────────────────────────────────────────────────────── */
 .launch-btn {
   display: inline-flex;

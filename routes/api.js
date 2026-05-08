@@ -199,6 +199,45 @@ router.get('/playlists', requireAuth, async (req, res) => {
   }
 });
 
+// ── GET /api/playlists/search?q=lofi&limit=8 ──────────────────────────────
+// Search YouTube for public playlists by keyword. No auth required.
+router.get('/playlists/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Missing q parameter' });
+
+  const limit = Math.min(parseInt(req.query.limit || '8', 10), 20);
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: 'Search unavailable' });
+  }
+
+  try {
+    const url = new URL('https://www.googleapis.com/youtube/v3/search');
+    url.searchParams.set('part', 'snippet');
+    url.searchParams.set('type', 'playlist');
+    url.searchParams.set('q', q);
+    url.searchParams.set('maxResults', String(limit));
+    url.searchParams.set('key', apiKey);
+
+    const searchRes = await fetch(url.toString());
+    if (!searchRes.ok) {
+      return res.status(502).json({ error: 'YouTube search failed' });
+    }
+    const data = await searchRes.json();
+    const playlists = (data.items || []).map((item) => ({
+      id:       item.id?.playlistId,
+      name:     item.snippet?.title ?? 'Untitled',
+      image:    item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url ?? null,
+      provider: 'youtube',
+    })).filter((p) => p.id);
+
+    res.json({ playlists });
+  } catch (err) {
+    console.error('Playlist search error:', err.message);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
 // ── GET /api/videos/suggestions?mode=fireplace&limit=8 ─────────────────────
 // Returns embeddable YouTube ambience videos filtered to >= 30 minutes.
 router.get('/videos/suggestions', async (req, res) => {

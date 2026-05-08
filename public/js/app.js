@@ -309,13 +309,18 @@
   }
 
   // ── Playlist search dropdown ─────────────────────────────────────────────
-  function _showPlaylistDropdown(query) {
-    if (!playlistDropdownEl || !_savedPlaylistsData.length) return;
-    const q = query.toLowerCase();
-    const matches = _savedPlaylistsData.filter((pl) => pl.name.toLowerCase().includes(q));
-    if (!matches.length) { _hidePlaylistDropdown(); return; }
+  let _dropdownSearchTimer = null;
+
+  function _renderDropdownItems(playlists, label) {
+    if (!playlistDropdownEl) return;
     playlistDropdownEl.innerHTML = '';
-    matches.slice(0, 8).forEach((pl) => {
+    if (label) {
+      const hdr = document.createElement('p');
+      hdr.className = 'pdrop-label';
+      hdr.textContent = label;
+      playlistDropdownEl.appendChild(hdr);
+    }
+    playlists.slice(0, 8).forEach((pl) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'pdrop-item';
@@ -342,7 +347,45 @@
     playlistDropdownEl.classList.remove('hidden');
   }
 
+  function _showPlaylistDropdown(query) {
+    if (!playlistDropdownEl) return;
+    const q = query.toLowerCase();
+
+    // First: filter saved playlists
+    if (_savedPlaylistsData.length) {
+      const saved = _savedPlaylistsData.filter((pl) => pl.name.toLowerCase().includes(q));
+      if (saved.length) {
+        _renderDropdownItems(saved, null);
+        return;
+      }
+    }
+
+    // Fallback: search YouTube (debounced, min 2 chars)
+    if (q.length < 2) { _hidePlaylistDropdown(); return; }
+    clearTimeout(_dropdownSearchTimer);
+
+    // Show a loading state immediately
+    if (playlistDropdownEl) {
+      playlistDropdownEl.innerHTML = '<p class="pdrop-label pdrop-searching">Searching YouTube…</p>';
+      playlistDropdownEl.classList.remove('hidden');
+    }
+
+    _dropdownSearchTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/playlists/search?q=${encodeURIComponent(query)}&limit=8`);
+        if (!res.ok) { _hidePlaylistDropdown(); return; }
+        const { playlists } = await res.json();
+        if (!playlists?.length) { _hidePlaylistDropdown(); return; }
+        // Only update if the input value hasn't changed
+        if (urlInput.value.trim() === query) {
+          _renderDropdownItems(playlists, 'YouTube results');
+        }
+      } catch (_) { _hidePlaylistDropdown(); }
+    }, 400);
+  }
+
   function _hidePlaylistDropdown() {
+    clearTimeout(_dropdownSearchTimer);
     if (playlistDropdownEl) playlistDropdownEl.classList.add('hidden');
   }
 
@@ -378,13 +421,10 @@
       urlHint.textContent = `\u2713 ${parsedPlaylist.provider === 'youtube' ? 'YouTube' : 'Spotify'} playlist detected`;
       urlHint.className   = 'playlist-hint ok';
       _hidePlaylistDropdown();
-    } else if (_savedPlaylistsData.length) {
+    } else {
       urlHint.textContent = '';
       urlHint.className   = 'playlist-hint';
       _showPlaylistDropdown(raw);
-    } else {
-      urlHint.textContent = 'Paste a YouTube or Spotify playlist URL';
-      urlHint.className   = 'playlist-hint err';
     }
   });
 
