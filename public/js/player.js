@@ -17,6 +17,8 @@ const Player = (() => {
   const btnNext       = document.getElementById('tp-next');
   const iconPlay      = btnPlay.querySelector('.icon-play');
   const iconPause     = btnPlay.querySelector('.icon-pause');
+  const progressFill  = document.getElementById('tp-progress-fill');
+  const progressTime  = document.getElementById('tp-progress-time');
   const spEmbed       = document.getElementById('sp-embed');
   const ytHost        = document.getElementById('yt-player-host');
 
@@ -26,6 +28,7 @@ const Player = (() => {
   let _ytApiReady = !!(window.YT && window.YT.Player);
   let _contextTitle = '';
   let _ytRecoverTimer = null;
+  let _progressUpdateTimer = null;
   let _ytSkipAttempts = 0;
   const YT_MAX_SKIP_ATTEMPTS = 6;
 
@@ -93,6 +96,39 @@ const Player = (() => {
     return true;
   }
 
+  function _formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function _updateProgress() {
+    if (_provider !== 'youtube' || !_ytPlayer || !_isPlaying) return;
+    try {
+      const current = _ytPlayer.getCurrentTime?.() || 0;
+      const duration = _ytPlayer.getDuration?.() || 0;
+      if (duration > 0) {
+        const percent = (current / duration) * 100;
+        if (progressFill) progressFill.style.width = `${percent}%`;
+        if (progressTime) progressTime.textContent = `${_formatTime(current)} / ${_formatTime(duration)}`;
+      }
+    } catch (_) {}
+  }
+
+  function _startProgressUpdates() {
+    _stopProgressUpdates();
+    if (_provider === 'youtube' && _isPlaying) {
+      _progressUpdateTimer = setInterval(_updateProgress, 500);
+    }
+  }
+
+  function _stopProgressUpdates() {
+    if (_progressUpdateTimer) {
+      clearInterval(_progressUpdateTimer);
+      _progressUpdateTimer = null;
+    }
+  }
+
   // ── URL parser — returns { provider, id, title } or null ─────────────────
   function parseUrl(raw) {
     const url = raw.trim();
@@ -117,9 +153,12 @@ const Player = (() => {
   // ── Load a playlist ───────────────────────────────────────────────────────
   async function load(parsed) {
     stop(false); // stop previous without hiding transport
+    _stopProgressUpdates();
     _provider = parsed.provider;
     _setContextTitle(parsed.title || parsed.id);
     _setCurrentTitle(parsed.title || parsed.id);
+    if (progressFill) progressFill.style.width = '0%';
+    if (progressTime) progressTime.textContent = '0:00 / 0:00';
 
     if (parsed.provider === 'youtube') {
       await _loadYoutube(parsed.id);
@@ -249,6 +288,11 @@ const Player = (() => {
     _isPlaying = state;
     iconPlay.classList.toggle('hidden',  state);
     iconPause.classList.toggle('hidden', !state);
+    if (state) {
+      _startProgressUpdates();
+    } else {
+      _stopProgressUpdates();
+    }
   }
 
   // ── Transport controls ────────────────────────────────────────────────────
@@ -324,6 +368,22 @@ const Player = (() => {
       _spMsg('next');
     }
   });
+
+  // Progress bar seeking
+  if (progressFill?.parentElement) {
+    progressFill.parentElement.addEventListener('click', (e) => {
+      if (_provider !== 'youtube' || !_ytPlayer) return;
+      try {
+        const rect = progressFill.parentElement.getBoundingClientRect();
+        const percent = (e.clientX - rect.left) / rect.width;
+        const duration = _ytPlayer.getDuration?.() || 0;
+        if (duration > 0) {
+          const seekTime = percent * duration;
+          _ytPlayer.seekTo?.(seekTime, true);
+        }
+      } catch (_) {}
+    });
+  }
 
   // ── Stop / tear down ──────────────────────────────────────────────────────
   function stop(hidePanel = true) {
