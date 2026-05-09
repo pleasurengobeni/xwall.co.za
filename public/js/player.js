@@ -182,6 +182,13 @@ const Player = (() => {
               _ytPlayer.setVolume(100);
             } catch (_) {}
           }
+          // Auto-play next track when current one ends
+          if (s === YT.PlayerState.ENDED) {
+            try {
+              _ytPlayer.nextVideo();
+              _ytPlayer.playVideo();
+            } catch (_) {}
+          }
           _setPlaying(s === YT.PlayerState.PLAYING);
         },
         onError: () => {
