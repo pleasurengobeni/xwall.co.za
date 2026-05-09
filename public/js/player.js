@@ -137,12 +137,27 @@ const Player = (() => {
     _ytSkipAttempts = 0;
     _clearYtRecoveryTimer();
 
-    await _ensureYtApi();
+    try {
+      await _ensureYtApi();
+    } catch (e) {
+      console.error('YouTube API failed to load:', e.message);
+      _setCurrentTitle('YouTube not available on this browser');
+      _setPlaying(false);
+      return;
+    }
+
+    if (!window.YT || !window.YT.Player) {
+      console.warn('YouTube API not available; browser may not support it');
+      _setCurrentTitle('YouTube not supported; try Chrome');
+      _setPlaying(false);
+      return;
+    }
 
     if (_ytPlayer) { _ytPlayer.destroy(); _ytPlayer = null; }
 
     // The YT.Player element must exist in the DOM
-    _ytPlayer = new YT.Player(ytHost, {
+    try {
+      _ytPlayer = new YT.Player(ytHost, {
       width:  1,
       height: 1,
       playerVars: {
@@ -159,7 +174,10 @@ const Player = (() => {
       events: {
         onReady:       (e) => {
           _refreshYoutubeCurrentTitle();
-          try { e.target.mute(); } catch (_) {}
+          try {
+            e.target.mute();
+            e.target.setVolume(0); // Ensure muted on init
+          } catch (_) {}
           _setPlaying(false);
           if (_contextTitle) {
             _setCurrentTitle(`${_contextTitle} - Press Play to start`);
@@ -180,7 +198,10 @@ const Player = (() => {
             try {
               _ytPlayer.unMute();
               _ytPlayer.setVolume(100);
-            } catch (_) {}
+              console.log('Audio unmuted at volume 100');
+            } catch (e) {
+              console.warn('Could not unmute audio:', e.message);
+            }
           }
           // Auto-play next track when current one ends
           if (s === YT.PlayerState.ENDED) {
@@ -191,7 +212,8 @@ const Player = (() => {
           }
           _setPlaying(s === YT.PlayerState.PLAYING);
         },
-        onError: () => {
+        onError: (e) => {
+          console.error('YouTube player error:', e?.data);
           if (!_isPlaying) {
             _setPlaying(false);
             _setCurrentTitle('Press Play to start music');
@@ -202,7 +224,12 @@ const Player = (() => {
           _setCurrentTitle(_contextTitle || 'Playback unavailable');
         },
       },
-    });
+      });
+    } catch (e) {
+      console.error('Failed to create YouTube player:', e.message);
+      _setCurrentTitle('Could not initialize YouTube player');
+      _setPlaying(false);
+    }
   }
 
   // ── Spotify ───────────────────────────────────────────────────────────────
@@ -242,15 +269,25 @@ const Player = (() => {
         _setPlaying(false);
       } else {
         try {
+          // On Android, unmute must happen with user gesture (which button click provides)
           _ytPlayer.unMute();
           _ytPlayer.setVolume(100);
-        } catch (_) {}
-        _ytPlayer.playVideo();
+          console.log('Unmuted and set volume to 100 on user click');
+        } catch (e) {
+          console.warn('Failed to unmute on play click:', e.message);
+        }
+        try {
+          _ytPlayer.playVideo();
+        } catch (e) {
+          console.warn('Failed to play video:', e.message);
+        }
         _setPlaying(true);
       }
     } else if (_provider === 'spotify') {
       _spMsg('toggle');
       _setPlaying(!_isPlaying); // optimistic toggle
+    } else {
+      console.warn('No player loaded yet');
     }
   });
 
