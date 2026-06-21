@@ -71,6 +71,11 @@ app.use(
     },
     // Allow embedding in iframes on the same origin
     frameguard: { action: 'sameorigin' },
+    // Helmet defaults to COOP "same-origin", which severs window.opener once the
+    // OAuth popup navigates to accounts.google.com and back — breaking the
+    // postMessage handshake the popup uses to close itself and refresh the
+    // opener tab. Disable it so the popup keeps a reference to its opener.
+    crossOriginOpenerPolicy: false,
   })
 );
 

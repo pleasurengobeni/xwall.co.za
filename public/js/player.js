@@ -86,6 +86,23 @@ const Player = (() => {
     }
   }
 
+  // Some videos never fire onStateChange/onError after playVideo() — e.g. a
+  // silent embed restriction that the IFrame API swallows. Without this watchdog
+  // the transport is left showing "playing" while no audio ever starts. Re-arm
+  // whenever a play attempt is made; cleared once PLAYING is confirmed or the
+  // user explicitly pauses/stops.
+  function _startYtRecoveryWatchdog() {
+    _clearYtRecoveryTimer();
+    _ytRecoverTimer = setTimeout(() => {
+      _ytRecoverTimer = null;
+      if (_provider !== 'youtube' || !_ytPlayer || _isPlaying) return;
+      if (!_recoverFromYoutubeError()) {
+        _setPlaying(false);
+        _setCurrentTitle(_contextTitle || 'Playback unavailable');
+      }
+    }, 6000);
+  }
+
   function _recoverFromYoutubeError() {
     if (_provider !== 'youtube' || !_ytPlayer) return false;
     if (_ytSkipAttempts >= YT_MAX_SKIP_ATTEMPTS) return false;
@@ -93,6 +110,7 @@ const Player = (() => {
     _setCurrentTitle('Trying next track...');
     try { _ytPlayer.nextVideo(); } catch (_) {}
     try { _ytPlayer.playVideo(); } catch (_) {}
+    _startYtRecoveryWatchdog();
     return true;
   }
 
@@ -309,6 +327,7 @@ const Player = (() => {
   btnPlay.addEventListener('click', () => {
     if (_provider === 'youtube' && _ytPlayer) {
       if (_isPlaying) {
+        _clearYtRecoveryTimer();
         _ytPlayer.pauseVideo();
         _setPlaying(false);
       } else {
@@ -326,6 +345,7 @@ const Player = (() => {
           console.warn('Failed to play video:', e.message);
         }
         _setPlaying(true);
+        _startYtRecoveryWatchdog();
       }
     } else if (_provider === 'spotify') {
       _spMsg('toggle');
@@ -337,6 +357,7 @@ const Player = (() => {
 
   function _softStop() {
     if (_provider === 'youtube' && _ytPlayer) {
+      _clearYtRecoveryTimer();
       _ytPlayer.stopVideo();
       _setPlaying(false);
       _setCurrentTitle('Stopped');
