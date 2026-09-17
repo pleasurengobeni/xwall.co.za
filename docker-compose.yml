@@ -30,7 +30,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Bind only to loopback so only Nginx (on the same host/network) can reach it.
+    # Bind to loopback only: the host nginx (nginx/host.conf) is the single
+    # internet-facing hop and proxies to 127.0.0.1:3002.
     ports:
       - "127.0.0.1:3002:3000"
     env_file:
@@ -50,7 +51,6 @@ services:
     pids_limit: 200
     networks:
       - backend
-      - frontend
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/ping"]
       interval: 30s
@@ -60,35 +60,8 @@ services:
     mem_limit: 512m
     cpus: 0.50
 
-  # ── Nginx TLS terminator ─────────────────────────────────────────────────
-  nginx:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    depends_on:
-      - web
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    networks:
-      - frontend
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      # Served by the catch-all server block, reachable from loopback only.
-      # (The old http://localhost/ping check followed the HTTPS redirect and failed.)
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    mem_limit: 64m
-
 networks:
   backend:   # db ↔ web only
-  frontend:  # web ↔ nginx only
 
 volumes:
   db_data:

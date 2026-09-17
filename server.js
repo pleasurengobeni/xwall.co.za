@@ -123,6 +123,20 @@ if (!sessionSecret || sessionSecret.length < 32) {
   }
 }
 
+// A long secret is not enough: the placeholders shipped in .env.example are
+// public, so a session signed with one can be forged by anyone. Warn loudly
+// rather than exiting, so a misconfigured deploy degrades instead of going down.
+if (process.env.NODE_ENV === 'production') {
+  const placeholderSecret = /^(replace_with|your_|changeme|dev-secret)/i.test(sessionSecret || '');
+  if (placeholderSecret) {
+    console.error(
+      'SECURITY WARNING: SESSION_SECRET is still the example placeholder. ' +
+      'Anyone who knows it can forge session cookies. Generate a new one with: ' +
+      'node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"'
+    );
+  }
+}
+
 // Use PostgreSQL-backed session store in non-test environments so sessions
 // survive server restarts and scale across multiple instances.
 const sessionConfig = {
