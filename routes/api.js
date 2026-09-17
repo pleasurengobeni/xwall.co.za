@@ -3,7 +3,23 @@ const express = require('express');
 const router  = express.Router();
 
 const analytics = require('../db/analytics');
-const { track: trackLimit, weather: weatherLimit } = require('../middleware/rateLimit');
+const geo       = require('../lib/geo');
+const { fetchWithTimeout, createTtlCache } = require('../lib/http');
+const {
+  track:   trackLimit,
+  weather: weatherLimit,
+  search:  searchLimit,
+} = require('../middleware/rateLimit');
+
+// Events the client is allowed to record. Anything else is rejected so the
+// events table can't be filled with arbitrary junk.
+const TRACKABLE_EVENTS = new Set(['mode_select', 'video_select', 'launch', 'clock_style_select']);
+
+// Upstream quota protection: YouTube search costs 100 units per call against a
+// 10k/day default quota, so identical requests are served from memory.
+const suggestionCache = createTtlCache({ ttlMs: 6 * 60 * 60 * 1000, max: 20 });
+const searchCache     = createTtlCache({ ttlMs: 60 * 60 * 1000, max: 300 });
+const weatherCache    = createTtlCache({ ttlMs: 10 * 60 * 1000, max: 2000 });
 
 const MODE_SEARCH_QUERIES = {
   fireplace: 'fireplace ambience crackling fire 4k',
@@ -62,6 +78,14 @@ function secondsToLabel(totalSeconds) {
   return `${mins}m`;
 }
 
+// Provider access tokens expire after ~1 h while our session lives longer;
+// flag 401s so the client can prompt the user to sign in again.
+function upstreamError(status, body, fallbackMessage) {
+  const payload = { error: body?.error?.message || fallbackMessage };
+  if (status === 401) payload.reauth = true;
+  return payload;
+}
+
 function requireAuth(req, res, next) {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -72,61 +96,76 @@ function requireAuth(req, res, next) {
 // ── POST /api/track ──────────────────────────────────────────────────────────
 // Records a client-side behavioural event (mode_select, video_select, launch, etc.)
 router.post('/track', trackLimit, async (req, res) => {
-  const { event, data } = req.body;
-  if (!event || typeof event !== 'string' || event.length > 64) {
+  const { event } = req.body || {};
+  if (typeof event !== 'string' || !TRACKABLE_EVENTS.has(event)) {
     return res.status(400).json({ error: 'invalid event' });
   }
-  await analytics.recordEvent({
-    visitorId:  req.session?._vid  || null,
-    sessionId:  req.session?.id    || null,
-    event:      event.replace(/[^a-z0-9_]/gi, '_').toLowerCase(),
-    data:       typeof data === 'object' ? data : null,
-  });
+  try {
+    await analytics.recordEvent({
+      visitorId:  req.session?._vid  || null,
+      sessionId:  req.session?.id    || null,
+      event,
+      data:       sanitizeEventData(req.body.data),
+    });
+  } catch (err) {
+    console.error('Track event error:', err.message);
+  }
   res.json({ ok: true });
 });
+
+// Accept only a small flat object of primitive values.
+function sanitizeEventData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const clean = {};
+  for (const [key, value] of Object.entries(data).slice(0, 10)) {
+    if (!/^[a-zA-Z0-9_]{1,32}$/.test(key)) continue;
+    if (typeof value === 'string')                              clean[key] = value.slice(0, 200);
+    else if (typeof value === 'number' && Number.isFinite(value)) clean[key] = value;
+    else if (typeof value === 'boolean' || value === null)      clean[key] = value;
+  }
+  return Object.keys(clean).length ? clean : null;
+}
 
 // ── GET /api/weather ──────────────────────────────────────────────────────────
 // Server-side proxy: IP → coordinates (ip-api.com) → current weather (Open-Meteo).
 // No auth, no browser geolocation permission, no external CSP entries needed.
 router.get('/weather', weatherLimit, async (req, res) => {
   try {
-    // req.ip is set correctly when trust proxy is configured in server.js
-    const rawIp   = (req.ip || '').replace(/^::ffff:/, '').trim();
-    const isLocal = rawIp === '127.0.0.1' || rawIp === '::1' || rawIp === '';
-
-    // Validate IP format before embedding in URL to prevent SSRF via injection
-    if (!isLocal && !/^[\da-f.:]+$/i.test(rawIp)) {
-      return res.status(400).json({ error: 'Bad request' });
+    // req.ip is set correctly when trust proxy is configured in server.js;
+    // lib/geo validates it before it is embedded in a URL.
+    const location = await geo.lookup(req.ip);
+    if (!location.ok || location.lat === null || location.lon === null) {
+      throw new Error('geo lookup failed');
     }
 
-    const geoUrl = isLocal ? 'http://ip-api.com/json' : `http://ip-api.com/json/${rawIp}`;
-    const geoRes = await fetch(geoUrl);
-    const geo    = await geoRes.json();
-    if (geo.status !== 'success') throw new Error('geo lookup failed');
+    // ~11 km grid so nearby visitors share one upstream call
+    const lat = Math.round(location.lat * 10) / 10;
+    const lon = Math.round(location.lon * 10) / 10;
+    const cacheKey = `${lat},${lon}`;
 
-    // Validate coordinates before embedding in URL
-    const lat = parseFloat(geo.lat);
-    const lon = parseFloat(geo.lon);
-    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      throw new Error('invalid coordinates');
+    let payload = weatherCache.get(cacheKey);
+    if (!payload) {
+      const wxRes = await fetchWithTimeout(
+        `https://api.open-meteo.com/v1/forecast` +
+        `?latitude=${lat}&longitude=${lon}` +
+        `&current=temperature_2m,weather_code`
+      );
+      if (!wxRes.ok) throw new Error('weather api failed');
+      const wx   = await wxRes.json();
+      const temp = Number(wx?.current?.temperature_2m);
+      const code = Number(wx?.current?.weather_code);
+      if (!Number.isFinite(temp) || !Number.isInteger(code)) throw new Error('bad weather payload');
+      payload = { temp: Math.round(temp), code };
+      weatherCache.set(cacheKey, payload);
     }
 
-    const wxRes = await fetch(
-      `https://api.open-meteo.com/v1/forecast` +
-      `?latitude=${lat}&longitude=${lon}` +
-      `&current=temperature_2m,weather_code`
-    );
-    if (!wxRes.ok) throw new Error('weather api failed');
-    const wx = await wxRes.json();
-
-    res.json({
-      temp: Math.round(wx.current.temperature_2m),
-      code: wx.current.weather_code,
-    });
+    res.set('Cache-Control', 'private, max-age=600');
+    res.json(payload);
   } catch (_) {
     res.status(503).json({ error: 'Weather unavailable' });
   }
 });
+
 // ── GET /api/playlists ────────────────────────────────────────────────────────
 // Fetches the signed-in user's playlists from YouTube or Spotify.
 // Tokens live only in the server-side session — never sent to the browser.
@@ -135,16 +174,16 @@ router.get('/playlists', requireAuth, async (req, res) => {
 
   try {
     if (provider === 'spotify') {
-      const response = await fetch(
-        'https://api.spotify.com/v1/me/playlists?limit=20',
+      const response = await fetchWithTimeout(
+        'https://api.spotify.com/v1/me/playlists?limit=50',
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        return res.status(response.status).json({ error: err.error?.message || 'Spotify API error' });
+        return res.status(response.status).json(upstreamError(response.status, err, 'Spotify API error'));
       }
       const data = await response.json();
-      const playlists = data.items.map((p) => ({
+      const playlists = (data.items || []).filter(Boolean).map((p) => ({
         id:       p.id,
         name:     p.name,
         image:    p.images?.[0]?.url ?? null,
@@ -158,11 +197,11 @@ router.get('/playlists', requireAuth, async (req, res) => {
 
       // Fetch the authenticated channel identity in parallel with playlists
       const [channelRes, playlistRes] = await Promise.all([
-        fetch(
+        fetchWithTimeout(
           'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=1',
           { headers: authHeader }
         ),
-        fetch(
+        fetchWithTimeout(
           'https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50',
           { headers: authHeader }
         ),
@@ -170,7 +209,7 @@ router.get('/playlists', requireAuth, async (req, res) => {
 
       if (!playlistRes.ok) {
         const err = await playlistRes.json().catch(() => ({}));
-        return res.status(playlistRes.status).json({ error: err.error?.message || 'YouTube API error' });
+        return res.status(playlistRes.status).json(upstreamError(playlistRes.status, err, 'YouTube API error'));
       }
 
       const [channelData, playlistData] = await Promise.all([
@@ -201,15 +240,29 @@ router.get('/playlists', requireAuth, async (req, res) => {
 
 // ── GET /api/playlists/search?q=lofi&limit=8 ──────────────────────────────
 // Search YouTube for public playlists by keyword. No auth required.
-router.get('/playlists/search', async (req, res) => {
-  const q = String(req.query.q || '').trim();
+// Validation and the result cache run before the per-IP daily limit, so only
+// searches that actually call the YouTube API use up a visitor's allowance.
+router.get('/playlists/search', (req, res, next) => {
+  const q = String(req.query.q || '').trim().replace(/\s+/g, ' ').slice(0, 100);
   if (!q) return res.status(400).json({ error: 'Missing q parameter' });
 
-  const limit = Math.min(parseInt(req.query.limit || '8', 10), 20);
+  const requestedLimit = parseInt(req.query.limit, 10);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(requestedLimit, 1), 20)
+    : 8;
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return res.status(503).json({ error: 'Search unavailable' });
   }
+
+  const cacheKey = `${limit}:${q.toLowerCase()}`;
+  const cached = searchCache.get(cacheKey);
+  if (cached) return res.json({ playlists: cached });
+
+  res.locals.search = { q, limit, apiKey, cacheKey };
+  next();
+}, searchLimit, async (req, res) => {
+  const { q, limit, apiKey, cacheKey } = res.locals.search;
 
   try {
     const url = new URL('https://www.googleapis.com/youtube/v3/search');
@@ -217,9 +270,10 @@ router.get('/playlists/search', async (req, res) => {
     url.searchParams.set('type', 'playlist');
     url.searchParams.set('q', q);
     url.searchParams.set('maxResults', String(limit));
+    url.searchParams.set('safeSearch', 'moderate');
     url.searchParams.set('key', apiKey);
 
-    const searchRes = await fetch(url.toString());
+    const searchRes = await fetchWithTimeout(url.toString());
     if (!searchRes.ok) {
       return res.status(502).json({ error: 'YouTube search failed' });
     }
@@ -231,6 +285,7 @@ router.get('/playlists/search', async (req, res) => {
       provider: 'youtube',
     })).filter((p) => p.id);
 
+    searchCache.set(cacheKey, playlists);
     res.json({ playlists });
   } catch (err) {
     console.error('Playlist search error:', err.message);
@@ -259,6 +314,12 @@ router.get('/videos/suggestions', async (req, res) => {
     return res.json(fallbackPayload());
   }
 
+  const canonicalMode = mode === 'space' ? 'scenic' : mode;
+  const cached = suggestionCache.get(canonicalMode);
+  if (cached) {
+    return res.json({ videos: cached.slice(0, limit), fallback: false });
+  }
+
   try {
     const searchParams = new URLSearchParams({
       key:             apiKey,
@@ -272,7 +333,7 @@ router.get('/videos/suggestions', async (req, res) => {
       relevanceLanguage: 'en',
     });
 
-    const searchRes = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
+    const searchRes = await fetchWithTimeout(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
     if (!searchRes.ok) {
       return res.json(fallbackPayload());
     }
@@ -291,7 +352,7 @@ router.get('/videos/suggestions', async (req, res) => {
       maxResults: String(Math.min(videoIds.length, 50)),
     });
 
-    const detailsRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?${detailsParams}`);
+    const detailsRes = await fetchWithTimeout(`https://www.googleapis.com/youtube/v3/videos?${detailsParams}`);
     if (!detailsRes.ok) {
       return res.json(fallbackPayload());
     }
@@ -313,15 +374,19 @@ router.get('/videos/suggestions', async (req, res) => {
         };
       })
       .filter((v) => v.durationSecs >= 1800)
-      .slice(0, limit)
+      .slice(0, 12)
       .map(({ durationSecs, ...rest }) => rest);
 
     if (!videos.length) return res.json(fallbackPayload());
-    return res.json({ videos, fallback: false });
+    suggestionCache.set(canonicalMode, videos);
+    return res.json({ videos: videos.slice(0, limit), fallback: false });
   } catch (err) {
     console.error('Video suggestion error:', err.message);
     return res.json(fallbackPayload());
   }
 });
+
+// Unknown API paths get a JSON 404 instead of falling through to the SPA page
+router.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
 module.exports = router;

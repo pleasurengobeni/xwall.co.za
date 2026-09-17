@@ -162,6 +162,7 @@ async function _overview() {
   const { rows: [ev] } = await pool.query(`
     SELECT
       COUNT(*)                                                        AS "launches",
+      COUNT(*) FILTER (WHERE timestamp > NOW() - INTERVAL '1 day')   AS "launchesToday",
       COUNT(*) FILTER (WHERE timestamp > NOW() - INTERVAL '7 days')  AS "launches7d"
     FROM events WHERE event = 'launch'
   `);
@@ -178,6 +179,7 @@ async function _overview() {
     loggedInGoogle:  Number(vi?.loggedInGoogle)  || 0,
     loggedInSpotify: Number(vi?.loggedInSpotify) || 0,
     launches:        Number(ev?.launches)        || 0,
+    launchesToday:   Number(ev?.launchesToday)   || 0,
     launches7d:      Number(ev?.launches7d)      || 0,
   };
 }

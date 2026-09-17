@@ -118,21 +118,36 @@ const Clock = (() => {
     dateEl.textContent = `${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
   }
 
+  function _weatherSpan(className, text) {
+    const span = document.createElement('span');
+    span.className = className;
+    span.textContent = text;
+    return span;
+  }
+
   async function _fetchWeather() {
+    // Refresh every 15 minutes; retry sooner after a failure.
+    let nextDelay = 15 * 60 * 1000;
     try {
       const res  = await fetch('/api/weather');
-      if (!res.ok) return;
+      if (!res.ok) throw new Error('weather unavailable');
       const { temp, code } = await res.json();
+      if (!interval || !weatherEl || !Number.isFinite(temp)) return;
       const [icon, desc] = WMO[code] || ['🌡️', ''];
-      if (!weatherEl) return;
-      weatherEl.innerHTML =
-        `<span class="weather-icon">${icon}</span>` +
-        `<span class="weather-temp">${temp}°C</span>` +
-        `<span class="weather-desc">${desc}</span>`;
+      weatherEl.replaceChildren(
+        _weatherSpan('weather-icon', icon),
+        _weatherSpan('weather-temp', `${Math.round(temp)}°C`),
+        _weatherSpan('weather-desc', desc)
+      );
       weatherEl.classList.remove('hidden');
-      // Refresh every 15 minutes
-      weatherTimer = setTimeout(_fetchWeather, 15 * 60 * 1000);
-    } catch (_) { /* network error — stay hidden */ }
+    } catch (_) {
+      // Network error — stay hidden and try again later
+      nextDelay = 5 * 60 * 1000;
+    }
+    if (interval) {
+      clearTimeout(weatherTimer);
+      weatherTimer = setTimeout(_fetchWeather, nextDelay);
+    }
   }
 
   function start(style = 'digital') {

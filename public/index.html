@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="description" content="Ambient wallpaper with music — xwall" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <title>xwall</title>
   <link rel="icon" type="image/png" href="/img/xwalllogo.png" />
   <link rel="stylesheet" href="/css/style.css" />
@@ -92,10 +93,13 @@
             inputmode="url"
             autocomplete="off"
             spellcheck="false"
-            placeholder="Paste a link or search your playlists…"
+            placeholder="Paste a playlist link, or search + Enter…"
             aria-label="Playlist URL or search"
+            role="combobox"
             aria-autocomplete="list"
             aria-controls="playlist-dropdown"
+            aria-expanded="false"
+            maxlength="500"
           />
           <button id="playlist-clear" class="playlist-clear hidden" type="button" aria-label="Clear">✕</button>
           <div id="playlist-dropdown" class="playlist-dropdown hidden" role="listbox" aria-label="Matching playlists"></div>
@@ -183,6 +187,7 @@
       <iframe
         id="sp-embed"
         class="sp-embed hidden"
+        title="Spotify player"
         src=""
         frameborder="0"
         allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"

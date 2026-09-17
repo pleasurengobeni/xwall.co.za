@@ -19,6 +19,7 @@ const Player = (() => {
   const iconPause     = btnPlay.querySelector('.icon-pause');
   const progressFill  = document.getElementById('tp-progress-fill');
   const progressTime  = document.getElementById('tp-progress-time');
+  const progressWrap  = transport ? transport.querySelector('.transport-progress') : null;
   const spEmbed       = document.getElementById('sp-embed');
   const ytHost        = document.getElementById('yt-player-host');
 
@@ -62,6 +63,13 @@ const Player = (() => {
         document.head.appendChild(s);
       }
     });
+  }
+
+  // YT.Player only gains its control methods once its iframe is ready, so any
+  // call made before then (e.g. the user leaves immediately) must not throw.
+  function _ytCall(method, ...args) {
+    if (!_ytPlayer || typeof _ytPlayer[method] !== 'function') return undefined;
+    try { return _ytPlayer[method](...args); } catch (_) { return undefined; }
   }
 
   function _setContextTitle(value) {
@@ -153,14 +161,19 @@ const Player = (() => {
     try {
       const u = new URL(url);
 
-      // YouTube — playlist URL
-      if (u.hostname.includes('youtube.com') || u.hostname === 'youtu.be') {
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+      const host = u.hostname.toLowerCase();
+
+      // YouTube — playlist URL (youtube.com, any subdomain, or youtu.be)
+      if (host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be') {
         const list = u.searchParams.get('list');
-        if (list) return { provider: 'youtube', id: list, title: 'YouTube Playlist' };
+        if (list && /^[A-Za-z0-9_-]{2,64}$/.test(list)) {
+          return { provider: 'youtube', id: list, title: 'YouTube Playlist' };
+        }
       }
 
       // Spotify — playlist / album / artist
-      if (u.hostname === 'open.spotify.com') {
+      if (host === 'open.spotify.com') {
         const m = u.pathname.match(/\/(playlist|album|artist)\/([A-Za-z0-9]+)/);
         if (m) return { provider: 'spotify', type: m[1], id: m[2], title: `Spotify ${m[1]}` };
       }
@@ -177,6 +190,9 @@ const Player = (() => {
     _setCurrentTitle(parsed.title || parsed.id);
     if (progressFill) progressFill.style.width = '0%';
     if (progressTime) progressTime.textContent = '0:00 / 0:00';
+
+    // Spotify's embed has its own progress bar; ours only tracks YouTube.
+    if (progressWrap) progressWrap.classList.toggle('hidden', parsed.provider !== 'youtube');
 
     if (parsed.provider === 'youtube') {
       await _loadYoutube(parsed.id);
@@ -210,7 +226,7 @@ const Player = (() => {
       return;
     }
 
-    if (_ytPlayer) { _ytPlayer.destroy(); _ytPlayer = null; }
+    if (_ytPlayer) { _ytCall('destroy'); _ytPlayer = null; }
 
     // The YT.Player element must exist in the DOM
     try {
@@ -255,10 +271,7 @@ const Player = (() => {
             try {
               _ytPlayer.unMute();
               _ytPlayer.setVolume(100);
-              console.log('Audio unmuted at volume 100');
-            } catch (e) {
-              console.warn('Could not unmute audio:', e.message);
-            }
+            } catch (_) {}
           }
           // Auto-play next track when current one ends
           if (s === YT.PlayerState.ENDED) {
@@ -291,9 +304,10 @@ const Player = (() => {
 
   // ── Spotify ───────────────────────────────────────────────────────────────
   function _loadSpotify(type, id) {
-    if (_ytPlayer) { _ytPlayer.destroy(); _ytPlayer = null; }
+    if (_ytPlayer) { _ytCall('destroy'); _ytPlayer = null; }
 
-    const src = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
+    const safeType = ['playlist', 'album', 'artist'].includes(type) ? type : 'playlist';
+    const src = `https://open.spotify.com/embed/${safeType}/${encodeURIComponent(id)}?utm_source=generator&theme=0`;
     spEmbed.src = src;
     spEmbed.classList.remove('hidden');
 
@@ -328,37 +342,30 @@ const Player = (() => {
     if (_provider === 'youtube' && _ytPlayer) {
       if (_isPlaying) {
         _clearYtRecoveryTimer();
-        _ytPlayer.pauseVideo();
+        _ytCall('pauseVideo');
         _setPlaying(false);
       } else {
         try {
           // On Android, unmute must happen with user gesture (which button click provides)
           _ytPlayer.unMute();
           _ytPlayer.setVolume(100);
-          console.log('Unmuted and set volume to 100 on user click');
-        } catch (e) {
-          console.warn('Failed to unmute on play click:', e.message);
-        }
+        } catch (_) {}
         try {
           _ytPlayer.playVideo();
-        } catch (e) {
-          console.warn('Failed to play video:', e.message);
-        }
+        } catch (_) {}
         _setPlaying(true);
         _startYtRecoveryWatchdog();
       }
     } else if (_provider === 'spotify') {
       _spMsg('toggle');
       _setPlaying(!_isPlaying); // optimistic toggle
-    } else {
-      console.warn('No player loaded yet');
     }
   });
 
   function _softStop() {
     if (_provider === 'youtube' && _ytPlayer) {
       _clearYtRecoveryTimer();
-      _ytPlayer.stopVideo();
+      _ytCall('stopVideo');
       _setPlaying(false);
       _setCurrentTitle('Stopped');
       return;
@@ -376,7 +383,7 @@ const Player = (() => {
 
   btnPrev.addEventListener('click', () => {
     if (_provider === 'youtube' && _ytPlayer) {
-      _ytPlayer.previousVideo();
+      _ytCall('previousVideo');
     } else if (_provider === 'spotify') {
       _spMsg('prev');
     }
@@ -384,7 +391,7 @@ const Player = (() => {
 
   btnNext.addEventListener('click', () => {
     if (_provider === 'youtube' && _ytPlayer) {
-      _ytPlayer.nextVideo();
+      _ytCall('nextVideo');
     } else if (_provider === 'spotify') {
       _spMsg('next');
     }
@@ -410,7 +417,7 @@ const Player = (() => {
   function stop(hidePanel = true) {
     _clearYtRecoveryTimer();
     _ytSkipAttempts = 0;
-    if (_ytPlayer) { _ytPlayer.stopVideo(); _ytPlayer.destroy(); _ytPlayer = null; }
+    if (_ytPlayer) { _ytCall('stopVideo'); _ytCall('destroy'); _ytPlayer = null; }
     spEmbed.src = '';
     spEmbed.classList.add('hidden');
     _setPlaying(false);

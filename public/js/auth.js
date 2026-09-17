@@ -59,7 +59,7 @@ const Auth = (() => {
   // ── Check session status ──────────────────────────────────────────────────
   async function check() {
     try {
-      const res  = await fetch('/auth/status');
+      const res  = await fetch('/auth/status', { cache: 'no-store' });
       const data = await res.json();
       if (data.authenticated) {
         _applyUser(data.user);
@@ -72,15 +72,41 @@ const Auth = (() => {
     }
   }
 
+  // Locally generated initials avatar — avoids sending the user's name to a
+  // third-party avatar service.
+  function _initialsAvatar(name) {
+    const initials = String(name || '')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => Array.from(part)[0] || '')
+      .join('')
+      .toUpperCase() || '?';
+    const safe = initials.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">' +
+      '<rect width="64" height="64" fill="#222"/>' +
+      '<text x="32" y="32" dy="0.35em" text-anchor="middle" fill="#fff" ' +
+      'font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="26">' +
+      safe + '</text></svg>';
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
   function _applyUser(user) {
     _user = user;
+    const displayName = String(user.displayName || 'Signed in');
 
-    // Fallback avatar via initials if no photo
-    userPhoto.src = user.photo && user.photo.startsWith('https://')
+    // Provider avatar hosts may reject requests that carry a Referer header.
+    userPhoto.referrerPolicy = 'no-referrer';
+    userPhoto.onerror = () => {
+      userPhoto.onerror = null;
+      userPhoto.src = _initialsAvatar(displayName);
+    };
+    userPhoto.src = typeof user.photo === 'string' && user.photo.startsWith('https://')
       ? user.photo
-      : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName)}&background=222&color=fff&size=64`;
-    userPhoto.alt    = user.displayName;
-    userName.textContent = user.displayName;
+      : _initialsAvatar(displayName);
+    userPhoto.alt    = '';
+    userName.textContent = displayName;
 
     userInfo.classList.remove('hidden');
     loginButtons.classList.add('hidden');
@@ -95,10 +121,18 @@ const Auth = (() => {
   }
 
   // ── Logout ────────────────────────────────────────────────────────────────
-  logoutBtn.addEventListener('click', async () => {
-    try { await fetch('/auth/logout', { method: 'POST' }); } catch (_) {}
+  async function logout() {
+    try {
+      await fetch('/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+    } catch (_) {}
     _clearUser();
-  });
+  }
+
+  logoutBtn.addEventListener('click', logout);
 
   // ── OAuth popup wiring ────────────────────────────────────────────────────
   loginButtons.querySelectorAll('a[href^="/auth/"]').forEach((link) => {
@@ -157,5 +191,5 @@ const Auth = (() => {
     window.history.replaceState({}, '', cleaned);
   }
 
-  return { check, current: () => _user, onAuthChange: (cb) => { _onAuthChange = cb; } };
+  return { check, logout, current: () => _user, onAuthChange: (cb) => { _onAuthChange = cb; } };
 })();

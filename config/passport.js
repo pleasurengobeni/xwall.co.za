@@ -3,7 +3,10 @@ const passport = require('passport');
 const GoogleStrategy  = require('passport-google-oauth20').Strategy;
 const SpotifyStrategy = require('passport-spotify').Strategy;
 
-// Only store what we need — never persist raw tokens to a shared store
+// The session (stored server-side in PostgreSQL) keeps only the profile fields
+// the UI needs plus the short-lived access token used to list playlists.
+// Refresh tokens are long-lived credentials the app never uses, so they are
+// deliberately discarded rather than persisted.
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
@@ -21,14 +24,13 @@ if (process.env.GOOGLE_CLIENT_ID) {
           'https://www.googleapis.com/auth/youtube.readonly',
         ],
       },
-      (accessToken, refreshToken, profile, done) => {
+      (accessToken, _refreshToken, profile, done) => {
         const user = {
           id:          profile.id,
           provider:    'google',
           displayName: profile.displayName,
           photo:       profile.photos?.[0]?.value ?? null,
           accessToken,
-          refreshToken,
         };
         return done(null, user);
       }
@@ -45,14 +47,13 @@ if (process.env.SPOTIFY_CLIENT_ID) {
         clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
         callbackURL:  process.env.SPOTIFY_CALLBACK_URL || '/auth/spotify/callback',
       },
-      (accessToken, refreshToken, _expiresIn, profile, done) => {
+      (accessToken, _refreshToken, _expiresIn, profile, done) => {
         const user = {
           id:          profile.id,
           provider:    'spotify',
           displayName: profile.displayName,
           photo:       profile.photos?.[0]?.value ?? null,
           accessToken,
-          refreshToken,
         };
         return done(null, user);
       }

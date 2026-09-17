@@ -17,9 +17,26 @@ const router    = express.Router();
 const analytics = require('../db/analytics');
 const { adminLogin: loginLimit } = require('../middleware/rateLimit');
 
+const ADMIN_SESSION_MS = 4 * 60 * 60 * 1000; // 4 h idle timeout for admin sessions
+
+// Admin pages carry analytics data and CSRF tokens: never cache or index them.
+router.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
+
 function requireAdmin(req, res, next) {
   if (req.session?.isAdmin) return next();
   res.redirect('/admin');
+}
+
+// Constant-time comparison that also hides length differences.
+function _safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ha = crypto.createHash('sha256').update(a).digest();
+  const hb = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
 }
 
 // ── CSRF helpers (synchronizer-token pattern) ─────────────────────────────────
@@ -34,9 +51,9 @@ function _getCsrfToken(req) {
 
 function _verifyCsrf(req) {
   if (process.env.NODE_ENV === 'test') return true;
-  const submitted = req.body._csrf;
+  const submitted = req.body?._csrf;
   const expected  = req.session?.csrfToken;
-  return !!(submitted && expected && submitted === expected);
+  return !!(submitted && expected && _safeEqual(submitted, expected));
 }
 
 // ── Login page ────────────────────────────────────────────────────────────────
@@ -44,7 +61,8 @@ router.get('/', (req, res) => {
   if (req.session?.isAdmin) return res.redirect('/admin/dashboard');
   // Ensure a CSRF token exists in the session before rendering the form
   const csrfToken = _getCsrfToken(req);
-  res.send(_loginPage(req.query.error, csrfToken, res.locals.cspNonce));
+  const error = typeof req.query.error === 'string' ? req.query.error.slice(0, 120) : '';
+  res.send(_loginPage(error, csrfToken, res.locals.cspNonce));
 });
 
 router.post('/login', loginLimit, (req, res) => {
@@ -53,15 +71,16 @@ router.post('/login', loginLimit, (req, res) => {
     return res.status(403).redirect('/admin?error=Invalid+security+token');
   }
 
-  const { password } = req.body;
+  const { password } = req.body || {};
   const adminPw = process.env.ADMIN_PASSWORD || '';
   if (!adminPw) return res.redirect('/admin?error=No+admin+password+configured');
-  if (password !== adminPw) return res.redirect('/admin?error=Wrong+password');
+  if (!_safeEqual(password, adminPw)) return res.redirect('/admin?error=Wrong+password');
 
   // Regenerate session ID on privilege elevation to prevent session fixation
   req.session.regenerate((err) => {
     if (err) return res.redirect('/admin?error=Session+error');
     req.session.isAdmin   = true;
+    req.session.cookie.maxAge = ADMIN_SESSION_MS;
     // Issue a fresh CSRF token for the new session
     req.session.csrfToken = crypto.randomBytes(32).toString('hex');
     res.redirect('/admin/dashboard');
@@ -78,13 +97,23 @@ router.post('/logout', requireAdmin, (req, res) => {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard', requireAdmin, async (req, res) => {
-  const stats = await analytics.getStats();
-  res.send(_dashboardPage(stats, _getCsrfToken(req), res.locals.cspNonce));
+  try {
+    const stats = await analytics.getStats();
+    res.send(_dashboardPage(stats, _getCsrfToken(req), res.locals.cspNonce));
+  } catch (err) {
+    console.error('Admin dashboard error:', err.message);
+    res.status(503).send('Analytics temporarily unavailable. Try again shortly.');
+  }
 });
 
 // ── Raw JSON (for auto-refresh fetch) ────────────────────────────────────────
 router.get('/data', requireAdmin, async (_req, res) => {
-  res.json(await analytics.getStats());
+  try {
+    res.json(await analytics.getStats());
+  } catch (err) {
+    console.error('Admin data error:', err.message);
+    res.status(503).json({ error: 'Analytics temporarily unavailable' });
+  }
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -291,7 +320,7 @@ svg.sparkline{display:block;width:100%;height:60px;overflow:visible}
     <p class="section-label">Authenticated Users</p>
     <div class="stat-grid">
       ${_sc('Total logged in',  o.loggedInTotal,   'ever signed in', '#adf')}
-      ${_sc('Launches today',   o.viewsToday,      '')}
+      ${_sc('Launches today',   o.launchesToday,   'Enter clicks')}
       ${_sc('Launches 7d',      o.launches7d,      'Enter clicks')}
       ${_sc('Total launches',   o.launches,        'Enter clicks')}
     </div>
@@ -364,14 +393,14 @@ svg.sparkline{display:block;width:100%;height:60px;overflow:visible}
 function _esc(s) {
   return String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function _sc(label, value, sub, color = '#fff') {
   const tone = color === '#adf' ? ' stat-value-blue' : '';
   return `<div class="stat-card">
     <div class="stat-label">${label}</div>
-    <div class="stat-value${tone}">${value.toLocaleString()}</div>
+    <div class="stat-value${tone}">${Number(value || 0).toLocaleString()}</div>
     ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
   </div>`;
 }
@@ -391,7 +420,7 @@ function _barTable(title, rows, labelFn) {
                 <rect class="row-bar-fill" x="0" y="0" width="${pct}" height="6" rx="3" ry="3"></rect>
               </svg>
             </div>
-            <span class="row-count">${r.count}</span>
+            <span class="row-count">${Number(r.count) || 0}</span>
           </div>`;
         }).join('')}
   </div>`;

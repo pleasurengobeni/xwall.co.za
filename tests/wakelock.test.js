@@ -136,9 +136,12 @@ describe('WakeLock network keep-alive', () => {
 
 // ── Visibility change re-acquire ──────────────────────────────────────────────
 describe('WakeLock visibility change', () => {
-  it('re-requests lock when tab becomes visible after release', async () => {
+  it('re-requests lock when tab becomes visible after the system released it', async () => {
     await WakeLock.request();
-    await WakeLock.release();
+    // Simulate the browser dropping the lock (e.g. tab was hidden)
+    const onRelease = mockLock.addEventListener.mock.calls
+      .find(([type]) => type === 'release')[1];
+    onRelease();
     jest.clearAllMocks();
 
     // Simulate tab becoming visible
@@ -150,6 +153,20 @@ describe('WakeLock visibility change', () => {
     // Allow micro-task queue to flush
     await Promise.resolve();
     expect(navigator.wakeLock.request).toHaveBeenCalled();
+  });
+
+  it('does NOT re-request after an intentional release()', async () => {
+    await WakeLock.request();
+    await WakeLock.release();
+    jest.clearAllMocks();
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true, value: 'visible',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    jest.advanceTimersByTime(1000);
+    await Promise.resolve();
+    expect(navigator.wakeLock.request).not.toHaveBeenCalled();
   });
 
   it('does NOT re-request when tab becomes hidden', async () => {

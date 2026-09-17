@@ -22,6 +22,7 @@ const trackVisitor = require('./middleware/track');
 require('./config/passport');
 
 const app = express();
+const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // Trust reverse-proxy headers (Nginx sets X-Forwarded-For / X-Forwarded-Proto).
 // TRUST_PROXY=1 in production; leave unset (0) for local dev without a proxy.
@@ -60,8 +61,11 @@ app.use(
           "https://www.youtube.com",
           "https://open.spotify.com",
         ],
+        frameAncestors:        ["'self'"],
         connectSrc:            ["'self'"],
         mediaSrc:              ["'self'"],
+        workerSrc:             ["'none'"],
+        manifestSrc:           ["'self'"],
         objectSrc:             ["'none'"],
         baseUri:               ["'self'"],
         formAction:            ["'self'"],
@@ -76,8 +80,29 @@ app.use(
     // postMessage handshake the popup uses to close itself and refresh the
     // opener tab. Disable it so the popup keeps a reference to its opener.
     crossOriginOpenerPolicy: false,
+    // Helmet's default "no-referrer" makes YouTube embeds fail (player error
+    // 153: embeds must identify the embedding site). Send only the origin
+    // cross-site, never full paths or query strings.
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   })
 );
+
+// Browser features this app never uses. Autoplay, fullscreen and
+// encrypted-media stay available for the YouTube/Spotify embeds.
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  next();
+});
+
+// ── Cheap, stateless endpoints first ─────────────────────────────────────────
+// Static assets and the keep-alive ping don't need body parsing, sessions or
+// the per-IP request budget (clients ping every 25 s). `index: false` lets GET /
+// fall through to visitor tracking and the SPA handler below.
+app.get('/ping', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.status(200).json({ ok: true });
+});
+app.use(express.static(PUBLIC_DIR, { index: false, dotfiles: 'ignore', redirect: false }));
 
 // ── Body parsing (size limits guard against request flooding) ─────────────────
 app.use(express.json({ limit: '10kb' }));
@@ -141,35 +166,65 @@ app.use('/auth',  authRoutes);
 app.use('/api',   apiRoutes);
 app.use('/admin', adminRoutes);
 
-// Keep-alive ping endpoint (called by client's network keep-alive timer)
-app.get('/ping', (_req, res) => res.status(200).json({ ok: true }));
-
 // Public legal page used by OAuth consent configuration
 app.get('/privacy-policy', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'privacy-policy.html'));
 });
 
 app.get('/terms-of-service', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'terms-of-service.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'terms-of-service.html'));
 });
 
-// ── Static files ──────────────────────────────────────────────────────────────
-app.use(express.static(path.join(__dirname, 'public')));
+// SPA fallback — only for extension-less paths. Probes such as /.env,
+// /wp-login.php or /config.json get a plain 404 instead of the app shell.
+app.get('*', (req, res, next) => {
+  if (path.extname(req.path) || req.path.includes('/.')) return next();
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
 
-// SPA fallback
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+app.use((_req, res) => {
+  res.status(404).type('text/plain').send('Not found');
+});
+
+// ── Error handler ─────────────────────────────────────────────────────────────
+// Never leak stack traces or internal messages to clients.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  const code   = err.status || err.statusCode;
+  const status = Number.isInteger(code) && code >= 400 && code < 600 ? code : 500;
+  if (status >= 500) console.error(`[error] ${req.method} ${req.path}:`, err.message);
+  if (res.headersSent) return;
+
+  const message = status >= 500 ? 'Internal server error'
+    : status === 413 ? 'Payload too large'
+      : 'Bad request';
+  if (req.accepts(['json', 'html']) === 'json' || req.path.startsWith('/api/')) {
+    return res.status(status).json({ error: message });
+  }
+  res.status(status).type('text/plain').send(message);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 // Only start the HTTP listener when this file is run directly (not required by tests)
+let server = null;
+
 if (require.main === module) {
   const PORT = parseInt(process.env.PORT, 10) || 3000;
+
+  if (process.env.NODE_ENV === 'production' && (process.env.ADMIN_PASSWORD || '').length < 16) {
+    console.warn('WARNING: ADMIN_PASSWORD should be at least 16 random characters.');
+  }
+
   analytics.init()
     .then(() => {
-      app.listen(PORT, () => {
+      server = app.listen(PORT, () => {
         console.log(`xwall running on http://localhost:${PORT}`);
       });
+      // Slow-client (slowloris) protection: bound how long a request may take
+      // to send headers and body.
+      server.headersTimeout = 20_000;
+      server.requestTimeout = 30_000;
     })
     .catch((err) => {
       console.error('Failed to initialise database:', err.message);
@@ -177,9 +232,21 @@ if (require.main === module) {
     });
 }
 
+// Log instead of crashing on stray async errors (Node exits on unhandled
+// rejections by default, which would turn any bug into downtime).
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason instanceof Error ? reason.message : reason);
+});
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
-// Drain open connections before the process exits (Docker / Kubernetes SIGTERM).
+// Stop accepting connections, let in-flight requests finish, then drain the DB
+// pool before exiting (Docker / Kubernetes SIGTERM).
+let _shuttingDown = false;
 async function _shutdown() {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  setTimeout(() => process.exit(0), 10_000).unref();
+  if (server) await new Promise((resolve) => server.close(resolve));
   try { await analytics.close(); } catch (_) {}
   process.exit(0);
 }

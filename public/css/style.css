@@ -322,6 +322,9 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   overflow: hidden;
 }
 
+/* Hide the pointer over the ambient display until the user moves the mouse */
+#view-main:not(.ui-active) { cursor: none; }
+
 #view-home {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -613,7 +616,8 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   -webkit-tap-highlight-color: transparent;
 }
 .pdrop-item:hover,
-.pdrop-item:focus { background: rgba(255,255,255,0.08); outline: none; }
+.pdrop-item:focus,
+.pdrop-item.is-active { background: rgba(255,255,255,0.08); outline: none; }
 .pdrop-item + .pdrop-item { border-top: 1px solid rgba(255,255,255,0.05); }
 
 .pdrop-thumb {
@@ -1485,4 +1489,17 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   letter-spacing: 0.22em;
   text-transform: uppercase;
   opacity: 0.7;
+}
+
+/* ── Accessibility: visible keyboard focus ──────────────────────────────── */
+.wpc:focus-visible,
+.vlib-card:focus-visible,
+.spl-item:focus-visible,
+.xrail-btn:focus-visible,
+.back-btn:focus-visible,
+.login-btn:focus-visible,
+.home-logout-btn:focus-visible,
+.playlist-clear:focus-visible {
+  outline: 2px solid rgba(255,255,255,0.55);
+  outline-offset: 2px;
 }

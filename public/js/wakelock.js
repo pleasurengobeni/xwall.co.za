@@ -8,13 +8,24 @@ const WakeLock = (() => {
 
   let lock          = null;
   let netTimer      = null;
+  // True between request() and release(): the page *wants* the screen kept on.
+  // Without it, the auto re-acquire logic would grab a new lock right after an
+  // intentional release (e.g. returning to the home view).
+  let wanted        = false;
   let supported     = ('wakeLock' in navigator);
   const PING_MS     = 25_000; // every 25 s — well under most 30 s idle timeouts
 
   async function request() {
-    if (!supported) return;
+    wanted = true;
+    if (!supported || lock) return;
     try {
-      lock = await navigator.wakeLock.request('screen');
+      const acquired = await navigator.wakeLock.request('screen');
+      if (!wanted) {
+        // release() was called while the request was pending
+        try { await acquired.release(); } catch (_) {}
+        return;
+      }
+      lock = acquired;
       _setIndicator(true);
       lock.addEventListener('release', _onRelease);
     } catch (err) {
@@ -26,9 +37,10 @@ const WakeLock = (() => {
   function _onRelease() {
     lock = null;
     _setIndicator(false);
-    // Re-acquire automatically once the page is visible again
-    if (document.visibilityState === 'visible') {
-      setTimeout(request, 800);
+    // The system dropped the lock (tab hidden, battery saver…): re-acquire once
+    // the page is visible again, but only if we still want it.
+    if (wanted && document.visibilityState === 'visible') {
+      setTimeout(() => { if (wanted) request(); }, 800);
     }
   }
 
@@ -56,16 +68,18 @@ const WakeLock = (() => {
 
   // Re-acquire whenever the tab becomes visible
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && !lock) {
+    if (wanted && document.visibilityState === 'visible' && !lock) {
       request();
     }
   });
 
   async function release() {
+    wanted = false;
     stopNetwork();
     if (lock) {
-      try { await lock.release(); } catch (_) {}
+      const current = lock;
       lock = null;
+      try { await current.release(); } catch (_) {}
     }
     _setIndicator(false);
   }

@@ -4,13 +4,16 @@ const passport = require('passport');
 const router   = express.Router();
 const analytics = require('../db/analytics');
 
+const SESSION_COOKIE = 'xws';
+
 function sanitizeReturnTo(rawPath) {
   if (typeof rawPath !== 'string') return '/';
-  if (!rawPath.startsWith('/') || rawPath.startsWith('//')) return '/';
+  if (!rawPath.startsWith('/') || rawPath.startsWith('//') || rawPath.startsWith('/\\')) return '/';
   if (rawPath.includes('\n') || rawPath.includes('\r')) return '/';
 
   try {
     const parsed = new URL(rawPath, 'http://xwall.local');
+    if (parsed.host !== 'xwall.local') return '/';
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch (_) {
     return '/';
@@ -24,13 +27,38 @@ function rememberReturnTo(req, _res, next) {
   next();
 }
 
-function buildRedirectWithStatus(req, key, value) {
-  const target = sanitizeReturnTo(req.session?.oauthReturnTo || '/');
-  if (req.session) delete req.session.oauthReturnTo;
-
-  const url = new URL(target, 'http://xwall.local');
+function buildRedirectWithStatus(returnTo, key, value) {
+  const url = new URL(sanitizeReturnTo(returnTo || '/'), 'http://xwall.local');
   url.searchParams.set(key, value);
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+// Shared OAuth callback. Passport 0.7 regenerates the session on login (to
+// prevent session fixation), which discards everything stored on it — so read
+// the return path and analytics visitor id *before* calling req.logIn.
+function oauthCallback(provider) {
+  return (req, res, next) => {
+    passport.authenticate(provider, (err, user) => {
+      const returnTo  = req.session?.oauthReturnTo;
+      const visitorId = req.session?._vid;
+      if (req.session) delete req.session.oauthReturnTo;
+
+      if (err || !user) {
+        return res.redirect(buildRedirectWithStatus(returnTo, 'error', 'auth_failed'));
+      }
+
+      req.logIn(user, (loginErr) => {
+        if (loginErr) {
+          return res.redirect(buildRedirectWithStatus(returnTo, 'error', 'auth_failed'));
+        }
+
+        if (visitorId) req.session._vid = visitorId;
+        // Fire-and-forget — don't delay the redirect to the app
+        analytics.recordAuth({ visitorId, provider }).catch(() => {});
+        return res.redirect(buildRedirectWithStatus(returnTo, 'auth', 'success'));
+      });
+    })(req, res, next);
+  };
 }
 
 // ── Google / YouTube ──────────────────────────────────────────────────────────
@@ -48,28 +76,11 @@ router.get(
   })
 );
 
-router.get(
-  '/google/callback',
-  (req, res, next) => {
-    passport.authenticate('google', (err, user) => {
-      if (err || !user) {
-        return res.redirect(buildRedirectWithStatus(req, 'error', 'auth_failed'));
-      }
-
-      req.logIn(user, (loginErr) => {
-        if (loginErr) {
-          return res.redirect(buildRedirectWithStatus(req, 'error', 'auth_failed'));
-        }
-
-        // Fire-and-forget — don't delay the redirect to the app
-        analytics.recordAuth({ visitorId: req.session?._vid, provider: 'google' }).catch(() => {});
-        return res.redirect(buildRedirectWithStatus(req, 'auth', 'success'));
-      });
-    })(req, res, next);
-  }
-);
+router.get('/google/callback', oauthCallback('google'));
 
 // ── Spotify ───────────────────────────────────────────────────────────────────
+// Least privilege: the app only lists playlists and plays them through the
+// public embed, so no playback/streaming scopes are requested.
 router.get(
   '/spotify',
   rememberReturnTo,
@@ -79,38 +90,17 @@ router.get(
       'user-read-email',
       'playlist-read-private',
       'playlist-read-collaborative',
-      'streaming',
-      'user-read-playback-state',
-      'user-modify-playback-state',
     ],
     showDialog: false,
   })
 );
 
-router.get(
-  '/spotify/callback',
-  (req, res, next) => {
-    passport.authenticate('spotify', (err, user) => {
-      if (err || !user) {
-        return res.redirect(buildRedirectWithStatus(req, 'error', 'auth_failed'));
-      }
-
-      req.logIn(user, (loginErr) => {
-        if (loginErr) {
-          return res.redirect(buildRedirectWithStatus(req, 'error', 'auth_failed'));
-        }
-
-        // Fire-and-forget — don't delay the redirect to the app
-        analytics.recordAuth({ visitorId: req.session?._vid, provider: 'spotify' }).catch(() => {});
-        return res.redirect(buildRedirectWithStatus(req, 'auth', 'success'));
-      });
-    })(req, res, next);
-  }
-);
+router.get('/spotify/callback', oauthCallback('spotify'));
 
 // ── Status ────────────────────────────────────────────────────────────────────
 // Returns minimal public profile — never exposes tokens or full internal user obj
 router.get('/status', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   if (req.isAuthenticated()) {
     const { id, provider, displayName, photo } = req.user;
     return res.json({ authenticated: true, user: { id, provider, displayName, photo } });
@@ -123,10 +113,16 @@ router.post('/logout', (req, res, next) => {
   req.logout((err) => {
     if (err) return next(err);
     req.session.destroy(() => {
-      res.clearCookie('connect.sid');
+      res.clearCookie(SESSION_COOKIE, {
+        httpOnly: true,
+        secure:   process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+      });
       res.json({ ok: true });
     });
   });
 });
+
+router.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
 module.exports = router;

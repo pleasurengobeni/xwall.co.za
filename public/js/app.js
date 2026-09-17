@@ -153,7 +153,7 @@
 
   function _renderVideoLibrary(mode, videos) {
     if (!Array.isArray(videos) || !videos.length) {
-      videoLibraryEl.innerHTML = '<p class="vlib-empty">No space videos available right now. Try again in a moment.</p>';
+      videoLibraryEl.innerHTML = '<p class="vlib-empty">No videos available right now. Try again in a moment.</p>';
       videoLibraryEl.classList.remove('hidden');
       return;
     }
@@ -166,10 +166,10 @@
         videos.map((v) => {
           const title = _escapeHtml(v.title);
           const meta = _escapeHtml(v.durationLabel || '30+ min');
-          const thumb = _escapeHtml(v.thumbnail || `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`);
+          const thumb = _escapeHtml(v.thumbnail || `https://i.ytimg.com/vi/${encodeURIComponent(v.id)}/mqdefault.jpg`);
           return (
             `<button class="vlib-card${v.id === activeId ? ' active' : ''}" ` +
-            `data-id="${v.id}" data-mode="${mode}" type="button" aria-label="${title}">` +
+            `data-id="${_escapeHtml(v.id)}" data-mode="${_escapeHtml(mode)}" type="button" aria-label="${title}" aria-pressed="${v.id === activeId}">` +
             `<img class="vlib-thumb" src="${thumb}" alt="${title}" loading="lazy" />` +
             `<span class="vlib-title">${title}</span>` +
             `<span class="vlib-meta">${meta}</span>` +
@@ -188,9 +188,10 @@
         const id = btn.dataset.id;
         selectedVideoIds[m] = id;
         _track('video_select', { mode: m, videoId: id });
-        videoLibraryEl.querySelectorAll('.vlib-card').forEach((b) =>
-          b.classList.toggle('active', b.dataset.id === id)
-        );
+        videoLibraryEl.querySelectorAll('.vlib-card').forEach((b) => {
+          b.classList.toggle('active', b.dataset.id === id);
+          b.setAttribute('aria-pressed', String(b.dataset.id === id));
+        });
       });
     });
   }
@@ -239,6 +240,9 @@
       })
       .catch(() => {
         // Silent fallback to bundled list when suggestions cannot be fetched.
+      })
+      .finally(() => {
+        videoLibraryEl.querySelector('.vlib-loading')?.remove();
       });
   }
 
@@ -309,25 +313,56 @@
   }
 
   // ── Playlist search dropdown ─────────────────────────────────────────────
-  let _dropdownSearchTimer = null;
+  let _dropdownActiveIndex = -1;
+
+  function _dropdownItems() {
+    return playlistDropdownEl
+      ? Array.from(playlistDropdownEl.querySelectorAll('.pdrop-item'))
+      : [];
+  }
+
+  function _isDropdownOpen() {
+    return Boolean(playlistDropdownEl) && !playlistDropdownEl.classList.contains('hidden');
+  }
+
+  function _setDropdownActive(index) {
+    const items = _dropdownItems();
+    if (!items.length) { _dropdownActiveIndex = -1; return; }
+    _dropdownActiveIndex = (index + items.length) % items.length;
+    items.forEach((item, i) => {
+      const active = i === _dropdownActiveIndex;
+      item.classList.toggle('is-active', active);
+      item.setAttribute('aria-selected', String(active));
+      if (active) {
+        urlInput.setAttribute('aria-activedescendant', item.id);
+        item.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
 
   function _renderDropdownItems(playlists, label) {
     if (!playlistDropdownEl) return;
     playlistDropdownEl.innerHTML = '';
+    _dropdownActiveIndex = -1;
+    urlInput.removeAttribute('aria-activedescendant');
     if (label) {
       const hdr = document.createElement('p');
       hdr.className = 'pdrop-label';
       hdr.textContent = label;
       playlistDropdownEl.appendChild(hdr);
     }
-    playlists.slice(0, 8).forEach((pl) => {
+    playlists.slice(0, 8).forEach((pl, index) => {
       const btn = document.createElement('button');
       btn.type = 'button';
+      btn.id = `pdrop-item-${index}`;
+      btn.tabIndex = -1;
       btn.className = 'pdrop-item';
       btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', 'false');
       if (pl.image) {
         const img = document.createElement('img');
         img.src = pl.image; img.className = 'pdrop-thumb'; img.alt = ''; img.loading = 'lazy';
+        img.referrerPolicy = 'no-referrer';
         btn.appendChild(img);
       } else {
         const sp = document.createElement('span'); sp.className = 'pdrop-thumb-empty';
@@ -345,6 +380,7 @@
       playlistDropdownEl.appendChild(btn);
     });
     playlistDropdownEl.classList.remove('hidden');
+    urlInput.setAttribute('aria-expanded', 'true');
   }
 
   function _showPlaylistDropdown(query) {
@@ -360,33 +396,72 @@
       }
     }
 
-    // Fallback: search YouTube (debounced, min 2 chars)
-    if (q.length < 2) { _hidePlaylistDropdown(); return; }
-    clearTimeout(_dropdownSearchTimer);
+    // No saved match: YouTube search is limited per visitor per day, so it only
+    // runs when the user presses Enter rather than on every keystroke.
+    _hidePlaylistDropdown();
+    if (q.length >= 2) {
+      _setHint('Press Enter to search YouTube playlists', 'playlist-hint');
+    }
+  }
 
-    // Show a loading state immediately
+  let _searchInFlight = false;
+
+  async function _searchYoutube(query) {
+    if (_searchInFlight || query.length < 2) return;
+    _searchInFlight = true;
+    _setHint('', 'playlist-hint');
     if (playlistDropdownEl) {
       playlistDropdownEl.innerHTML = '<p class="pdrop-label pdrop-searching">Searching YouTube…</p>';
       playlistDropdownEl.classList.remove('hidden');
     }
 
-    _dropdownSearchTimer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/playlists/search?q=${encodeURIComponent(query)}&limit=8`);
-        if (!res.ok) { _hidePlaylistDropdown(); return; }
-        const { playlists } = await res.json();
-        if (!playlists?.length) { _hidePlaylistDropdown(); return; }
-        // Only update if the input value hasn't changed
-        if (urlInput.value.trim() === query) {
-          _renderDropdownItems(playlists, 'YouTube results');
-        }
-      } catch (_) { _hidePlaylistDropdown(); }
-    }, 400);
+    try {
+      const res = await fetch(`/api/playlists/search?q=${encodeURIComponent(query)}&limit=8`);
+      const payload = await res.json().catch(() => ({}));
+      if (urlInput.value.trim() !== query) return; // input changed meanwhile
+
+      if (!res.ok) {
+        _hidePlaylistDropdown();
+        _setHint(
+          res.status === 429
+            ? (payload.error || 'Daily search limit reached. Paste a playlist link instead.')
+            : 'Search is unavailable right now. Paste a playlist link instead.',
+          'playlist-hint'
+        );
+        return;
+      }
+
+      const playlists = Array.isArray(payload.playlists) ? payload.playlists : [];
+      if (!playlists.length) {
+        _hidePlaylistDropdown();
+        _setHint(`No YouTube playlists found for \u201c${query}\u201d`, 'playlist-hint');
+        return;
+      }
+
+      // Only present on searches that counted against the daily allowance
+      const remaining = parseInt(res.headers.get('RateLimit-Remaining'), 10);
+      const label = Number.isFinite(remaining)
+        ? `YouTube results \u00b7 ${remaining} search${remaining === 1 ? '' : 'es'} left today`
+        : 'YouTube results';
+      _renderDropdownItems(playlists, label);
+    } catch (_) {
+      _hidePlaylistDropdown();
+      _setHint('Search failed. Check your connection and try again.', 'playlist-hint');
+    } finally {
+      _searchInFlight = false;
+    }
   }
 
   function _hidePlaylistDropdown() {
-    clearTimeout(_dropdownSearchTimer);
+    _dropdownActiveIndex = -1;
+    urlInput.removeAttribute('aria-activedescendant');
+    urlInput.setAttribute('aria-expanded', 'false');
     if (playlistDropdownEl) playlistDropdownEl.classList.add('hidden');
+  }
+
+  function _setHint(text, className) {
+    urlHint.textContent = text;
+    urlHint.className   = className;
   }
 
   function _selectDropdownPlaylist(pl) {
@@ -442,8 +517,15 @@
   async function _loadSavedPlaylists() {
     if (!savedPlaylistsEl) return;
     try {
-      const res = await fetch('/api/playlists');
-      const payload = await res.json();
+      const res = await fetch('/api/playlists', { cache: 'no-store' });
+      const payload = await res.json().catch(() => ({}));
+      if (res.status === 401 && payload?.reauth) {
+        // Provider token expired: sign out locally so the sign-in buttons return.
+        await Auth.logout();
+        _setHint('Your sign-in expired. Sign in again to see your playlists.', 'playlist-hint');
+        return;
+      }
+      if (!res.ok) throw new Error('playlists unavailable');
       const list = Array.isArray(payload?.playlists) ? payload.playlists : [];
       _savedPlaylistsData = list;
       if (!list.length) {
@@ -461,7 +543,7 @@
         }
         savedPlaylistsEl.innerHTML =
           '<p class="saved-playlists-label">Your playlists</p>' +
-          `<p class="saved-playlists-empty">${emptyCopy}</p>`;
+          `<p class="saved-playlists-empty">${_escapeHtml(emptyCopy)}</p>`;
         savedPlaylistsEl.classList.remove('hidden');
         return;
       }
@@ -473,12 +555,12 @@
         `<button class="xrail-btn xrail-btn-left" type="button" aria-label="Scroll playlists left">&lt;</button>` +
         `<div class="xrail-track saved-playlists-list">${
           list.map((pl) =>
-            `<button class="spl-item" data-id="${pl.id}" data-provider="${pl.provider}" type="button">` +
+            `<button class="spl-item" data-id="${_escapeHtml(pl.id)}" data-provider="${pl.provider === 'spotify' ? 'spotify' : 'youtube'}" type="button">` +
             (pl.image
-              ? `<img class="spl-thumb" src="${pl.image}" alt="" loading="lazy" />`
+              ? `<img class="spl-thumb" src="${_escapeHtml(pl.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
               : `<span class="spl-thumb-empty"></span>`) +
             `<span class="spl-copy">` +
-            `<span class="spl-name">${pl.name}</span>` +
+            `<span class="spl-name">${_escapeHtml(pl.name || 'Untitled')}</span>` +
             `<span class="spl-subtitle">Ready on this device</span>` +
             `</span>` +
             `<span class="spl-badge ${pl.provider === 'spotify' ? 'spl-badge-sp' : 'spl-badge-yt'}">${pl.provider === 'spotify' ? 'Spotify' : 'YouTube'}</span>` +
@@ -526,11 +608,54 @@
 
   // ── Launch → go to main view ──────────────────────────────────────────────
   launchBtn.addEventListener('click', goMain);
-  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') goMain(); });
+  urlInput.addEventListener('keydown', (e) => {
+    const items = _isDropdownOpen() ? _dropdownItems() : [];
+
+    if (e.key === 'ArrowDown' && items.length) {
+      e.preventDefault();
+      _setDropdownActive(_dropdownActiveIndex + 1);
+      return;
+    }
+    if (e.key === 'ArrowUp' && items.length) {
+      e.preventDefault();
+      _setDropdownActive(_dropdownActiveIndex - 1);
+      return;
+    }
+    if (e.key === 'Escape' && _isDropdownOpen()) {
+      e.preventDefault();
+      _hidePlaylistDropdown();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // With results showing, Enter picks the highlighted (or first) playlist.
+      if (items.length && !parsedPlaylist) {
+        items[Math.max(_dropdownActiveIndex, 0)].click();
+        return;
+      }
+      // Typed text that isn't a playlist link: search YouTube.
+      const raw = urlInput.value.trim();
+      if (raw && !parsedPlaylist) {
+        _searchYoutube(raw);
+        return;
+      }
+      goMain();
+    }
+  });
 
   function goMain() {
+    if (!viewMain.classList.contains('hidden')) return;
+    _hidePlaylistDropdown();
     viewHome.classList.add('hidden');
     viewMain.classList.remove('hidden');
+
+    // Give the ambient view its own history entry so the browser / Android
+    // back button returns to the selection screen instead of leaving the site.
+    try {
+      if (!history.state || history.state.xwallView !== 'main') {
+        history.pushState({ xwallView: 'main' }, '');
+      }
+    } catch (_) {}
     const shouldMuteBackground = Boolean(parsedPlaylist);
     const shouldUseCssOnlyBackground = Boolean(parsedPlaylist) && isMobileMediaEnvironment();
 
@@ -570,9 +695,23 @@
   }
 
   // ── Back → return to home view ────────────────────────────────────────────
-  backBtn.addEventListener('click', goHome);
+  backBtn.addEventListener('click', _navigateHome);
+
+  function _navigateHome() {
+    // Pop our own history entry when present; popstate then calls goHome().
+    if (history.state && history.state.xwallView === 'main') {
+      history.back();
+    } else {
+      goHome();
+    }
+  }
+
+  window.addEventListener('popstate', () => {
+    if (!viewMain.classList.contains('hidden')) goHome();
+  });
 
   function goHome() {
+    if (viewMain.classList.contains('hidden')) return;
     viewMain.classList.add('hidden');
     viewMain.classList.remove('ui-active');
     viewHome.classList.remove('hidden');
@@ -590,6 +729,7 @@
     ['mousemove', 'touchstart'].forEach((evt) =>
       document.removeEventListener(evt, _onActivity)
     );
+    document.removeEventListener('keydown', _onMainKeydown);
   }
 
   // ── UI activity detection (reveals back button) ───────────────────────────
@@ -603,6 +743,72 @@
     ['mousemove', 'touchstart'].forEach((evt) =>
       document.addEventListener(evt, _onActivity, { passive: true })
     );
+    document.addEventListener('keydown', _onMainKeydown);
+  }
+
+  // ── Keyboard shortcuts in the ambient view (desktop / TV remotes) ─────────
+  //   Space / K → play-pause    ← / → → previous / next track
+  //   F → toggle fullscreen     Esc / Backspace → back to selection
+  function _clickIfShown(id) {
+    const transport = document.getElementById('transport');
+    if (transport && transport.classList.contains('shown')) {
+      document.getElementById(id)?.click();
+    }
+  }
+
+  function _onMainKeydown(e) {
+    if (viewMain.classList.contains('hidden')) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    _onActivity();
+
+    // Let focused controls handle their own activation keys.
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if ((tag === 'BUTTON' || tag === 'A') && (e.key === ' ' || e.key === 'Enter')) return;
+
+    switch (e.key) {
+      case ' ':
+      case 'k':
+      case 'K':
+        e.preventDefault();
+        _clickIfShown('tp-play');
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        _clickIfShown('tp-next');
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        _clickIfShown('tp-prev');
+        break;
+      case 'f':
+      case 'F':
+        e.preventDefault();
+        _toggleFullscreen();
+        break;
+      case 'Escape':
+      case 'Backspace':
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+          e.preventDefault();
+          _navigateHome();
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  function _toggleFullscreen() {
+    const docEl = document.documentElement;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else if (document.webkitFullscreenElement) {
+      document.webkitExitFullscreen();
+    } else if (docEl.requestFullscreen) {
+      docEl.requestFullscreen().catch(() => {});
+    } else if (docEl.webkitRequestFullscreen) {
+      docEl.webkitRequestFullscreen();
+    }
   }
 
   // ── Auth check (shows/hides home sign-in row + saves playlists) ───────────

@@ -13,6 +13,8 @@ services:
     # Never expose 5432 to the host in production.
     networks:
       - backend
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U xwall -d xwall"]
       interval: 5s
@@ -39,9 +41,13 @@ services:
       - TRUST_PROXY=1
     security_opt:
       - no-new-privileges:true
+    # Node needs no Linux capabilities (listens on unprivileged port 3000)
+    cap_drop:
+      - ALL
     read_only: true
     tmpfs:
-      - /tmp                # Express / node may need to write to /tmp
+      - /tmp:size=16m,noexec,nosuid,nodev   # Express / node may need to write to /tmp
+    pids_limit: 200
     networks:
       - backend
       - frontend
@@ -68,8 +74,12 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
     networks:
       - frontend
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/ping"]
+      # Served by the catch-all server block, reachable from loopback only.
+      # (The old http://localhost/ping check followed the HTTPS redirect and failed.)
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
       interval: 30s
       timeout: 5s
       retries: 3

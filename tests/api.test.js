@@ -87,7 +87,7 @@ describe('playlist shaping — Spotify', () => {
     await handlers[1](req, res, jest.fn());
 
     expect(status).toHaveBeenCalledWith(401);
-    expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    expect(json).toHaveBeenCalledWith({ error: 'Unauthorized', reauth: true });
   });
 });
 
@@ -261,5 +261,58 @@ describe('video suggestions', () => {
     expect(res.body.videos[0]).toHaveProperty('id');
     expect(res.body.videos[0]).toHaveProperty('title');
     expect(res.body.videos[0]).toHaveProperty('thumbnail');
+  });
+});
+
+describe('playlist search daily limit', () => {
+  const originalApiKey = process.env.GOOGLE_API_KEY;
+  let originalFetch;
+
+  const ytResponse = (id) => ({
+    ok: true,
+    json: async () => ({ items: [{ id: { playlistId: id }, snippet: { title: id } }] }),
+  });
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    process.env.GOOGLE_API_KEY = 'test-google-key';
+    // Rate limits are bypassed under NODE_ENV=test; enable them for this suite.
+    process.env.NODE_ENV = 'development';
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = 'test';
+    global.fetch = originalFetch;
+    process.env.GOOGLE_API_KEY = originalApiKey;
+  });
+
+  it('allows 2 uncached searches per IP per day; cached and failed searches are free', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 403 })   // upstream failure → refunded
+      .mockResolvedValueOnce(ytResponse('PLone'))
+      .mockResolvedValueOnce(ytResponse('PLtwo'));
+
+    const search = (q) => request(app).get(`/api/playlists/search?q=${q}&limit=8`);
+
+    expect((await search('limit-fail')).status).toBe(502);
+
+    const first = await search('limit-one');
+    expect(first.status).toBe(200);
+    expect(first.headers['ratelimit-remaining']).toBe('1');
+
+    // Same query again (different case/spacing) is served from cache, not counted
+    expect((await search('LIMIT-ONE%20')).status).toBe(200);
+
+    const second = await search('limit-two');
+    expect(second.status).toBe(200);
+    expect(second.headers['ratelimit-remaining']).toBe('0');
+
+    const third = await search('limit-three');
+    expect(third.status).toBe(429);
+    expect(third.body.code).toBe('search_limit');
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+
+    // Cached queries still work after the allowance is used up
+    expect((await search('limit-two')).status).toBe(200);
   });
 });

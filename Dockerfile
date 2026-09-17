@@ -4,12 +4,13 @@ WORKDIR /app
 
 RUN addgroup -S xwall && adduser -S xwall -G xwall
 
-# Install dependencies first (cached layer)
+# Install dependencies first (cached layer). No production dependency needs an
+# install script, so skip them to shrink the supply-chain attack surface.
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
-# Copy app source with runtime ownership already set
-COPY --chown=xwall:xwall . .
+# App source stays owned by root: the runtime user can read but not modify it.
+COPY . .
 USER xwall
 
 EXPOSE 3000

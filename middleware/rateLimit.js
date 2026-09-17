@@ -14,7 +14,7 @@ const _base = {
   skip:            _skip,
 };
 
-// Applied to every incoming request
+// Applied to every dynamic request (static assets and /ping are served first)
 exports.general = rateLimit({
   ..._base,
   windowMs: 15 * 60 * 1000, // 15 min
@@ -22,12 +22,15 @@ exports.general = rateLimit({
   message:  { error: 'Too many requests, please try again later.' },
 });
 
-// Admin login brute-force protection
+// Admin login brute-force protection — only failed attempts count
 exports.adminLogin = rateLimit({
   ..._base,
   windowMs: 15 * 60 * 1000, // 15 min
   max:      5,
-  message:  { error: 'Too many login attempts, please try again in 15 minutes.' },
+  skipSuccessfulRequests: true,
+  handler: (_req, res) => {
+    res.redirect('/admin?error=Too+many+login+attempts.+Try+again+in+15+minutes');
+  },
 });
 
 // POST /api/track (client-side events)
@@ -44,4 +47,18 @@ exports.weather = rateLimit({
   windowMs: 60 * 1000, // 1 min
   max:      20,
   message:  { error: 'Too many weather requests.' },
+});
+
+// GET /api/playlists/search — each uncached call costs 100 YouTube quota units.
+// Only searches that reach YouTube are counted (cached results are served
+// before this limiter), and failed upstream calls are refunded.
+exports.search = rateLimit({
+  ..._base,
+  windowMs: 24 * 60 * 60 * 1000, // 24 h
+  max:      2,
+  skipFailedRequests: true,
+  message:  {
+    error: 'Daily search limit reached. Paste a playlist link instead, or try again tomorrow.',
+    code:  'search_limit',
+  },
 });
