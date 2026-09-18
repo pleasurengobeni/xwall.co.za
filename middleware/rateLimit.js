@@ -58,7 +58,9 @@ exports.weather = rateLimit({
 exports.search = rateLimit({
   ..._base,
   windowMs: 24 * 60 * 60 * 1000, // 24 h
-  max:      parseInt(process.env.SEARCH_LIMIT_PER_DAY, 10) || 50,
+  // The project affords ~100 uncached YouTube searches a day in total, so a
+  // per-account default of 15 keeps one heavy user from spending everyone's.
+  max:      parseInt(process.env.SEARCH_LIMIT_PER_DAY, 10) || 15,
   skipFailedRequests: true,
   keyGenerator: (req) => `u:${req.user?.id || 'anon'}`,
   message:  {

@@ -18,7 +18,10 @@ const TRACKABLE_EVENTS = new Set(['mode_select', 'video_select', 'launch', 'cloc
 // Upstream quota protection: YouTube search costs 100 units per call against a
 // 10k/day default quota, so identical requests are served from memory.
 const suggestionCache = createTtlCache({ ttlMs: 6 * 60 * 60 * 1000, max: 20 });
-const searchCache     = createTtlCache({ ttlMs: 60 * 60 * 1000, max: 300 });
+// Search results are public and change slowly, so one lookup of a popular
+// query serves every visitor for a day. This is the main defence for the
+// project's 10k/day quota: ~100 YouTube searches a day is the hard ceiling.
+const searchCache     = createTtlCache({ ttlMs: 24 * 60 * 60 * 1000, max: 2000 });
 const weatherCache    = createTtlCache({ ttlMs: 10 * 60 * 1000, max: 2000 });
 
 const MODE_SEARCH_QUERIES = {
