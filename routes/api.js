@@ -5,6 +5,7 @@ const router  = express.Router();
 const analytics = require('../db/analytics');
 const geo       = require('../lib/geo');
 const { fetchWithTimeout, createTtlCache } = require('../lib/http');
+const { getAccessToken, authorizedFetch } = require('../lib/tokens');
 const {
   track:   trackLimit,
   weather: weatherLimit,
@@ -81,8 +82,9 @@ function secondsToLabel(totalSeconds) {
   return `${mins}m`;
 }
 
-// Provider access tokens expire after ~1 h while our session lives longer;
-// flag 401s so the client can prompt the user to sign in again.
+// Expired access tokens are renewed transparently (lib/tokens.js). A 401 that
+// survives the refresh means the user revoked access or has no refresh token,
+// so flag it and the client prompts a fresh sign-in.
 function upstreamError(status, body, fallbackMessage) {
   const payload = { error: body?.error?.message || fallbackMessage };
   if (status === 401) payload.reauth = true;
@@ -173,14 +175,11 @@ router.get('/weather', weatherLimit, async (req, res) => {
 // Fetches the signed-in user's playlists from YouTube or Spotify.
 // Tokens live only in the server-side session — never sent to the browser.
 router.get('/playlists', requireAuth, async (req, res) => {
-  const { provider, accessToken } = req.user;
+  const { provider } = req.user;
 
   try {
     if (provider === 'spotify') {
-      const response = await fetchWithTimeout(
-        'https://api.spotify.com/v1/me/playlists?limit=50',
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+      const response = await authorizedFetch(req, 'https://api.spotify.com/v1/me/playlists?limit=50');
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         return res.status(response.status).json(upstreamError(response.status, err, 'Spotify API error'));
@@ -196,18 +195,15 @@ router.get('/playlists', requireAuth, async (req, res) => {
     }
 
     if (provider === 'google') {
-      const authHeader = { Authorization: `Bearer ${accessToken}` };
+      // Renew an expired token once, up front, before the two parallel calls
+      await getAccessToken(req);
 
       // Fetch the authenticated channel identity in parallel with playlists
       const [channelRes, playlistRes] = await Promise.all([
-        fetchWithTimeout(
-          'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=1',
-          { headers: authHeader }
-        ),
-        fetchWithTimeout(
-          'https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50',
-          { headers: authHeader }
-        ),
+        authorizedFetch(req,
+          'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=1'),
+        authorizedFetch(req,
+          'https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50'),
       ]);
 
       if (!playlistRes.ok) {
@@ -270,12 +266,11 @@ router.get('/playlists/search', (req, res, next) => {
   next();
 }, searchLimit, async (req, res) => {
   const { q, limit, provider, cacheKey } = res.locals.search;
-  const accessToken = req.user.accessToken;
 
   try {
     const playlists = provider === 'spotify'
-      ? await _searchSpotifyPlaylists(q, limit, accessToken, res)
-      : await _searchYoutubePlaylists(q, limit, accessToken, res);
+      ? await _searchSpotifyPlaylists(req, q, limit, res)
+      : await _searchYoutubePlaylists(req, q, limit, res);
     if (!playlists) return; // helper already sent an error response
 
     searchCache.set(cacheKey, playlists);
@@ -286,7 +281,7 @@ router.get('/playlists/search', (req, res, next) => {
   }
 });
 
-async function _searchYoutubePlaylists(q, limit, accessToken, res) {
+async function _searchYoutubePlaylists(req, q, limit, res) {
   const url = new URL('https://www.googleapis.com/youtube/v3/search');
   url.searchParams.set('part', 'snippet');
   url.searchParams.set('type', 'playlist');
@@ -294,9 +289,7 @@ async function _searchYoutubePlaylists(q, limit, accessToken, res) {
   url.searchParams.set('maxResults', String(limit));
   url.searchParams.set('safeSearch', 'moderate');
 
-  const searchRes = await fetchWithTimeout(url.toString(), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const searchRes = await authorizedFetch(req, url.toString());
   if (!searchRes.ok) {
     const err = await searchRes.json().catch(() => ({}));
     res.status(searchRes.status === 401 ? 401 : 502)
@@ -313,15 +306,13 @@ async function _searchYoutubePlaylists(q, limit, accessToken, res) {
   })).filter((p) => p.id);
 }
 
-async function _searchSpotifyPlaylists(q, limit, accessToken, res) {
+async function _searchSpotifyPlaylists(req, q, limit, res) {
   const url = new URL('https://api.spotify.com/v1/search');
   url.searchParams.set('q', q);
   url.searchParams.set('type', 'playlist');
   url.searchParams.set('limit', String(limit));
 
-  const searchRes = await fetchWithTimeout(url.toString(), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const searchRes = await authorizedFetch(req, url.toString());
   if (!searchRes.ok) {
     const err = await searchRes.json().catch(() => ({}));
     res.status(searchRes.status === 401 ? 401 : 502)
@@ -365,13 +356,10 @@ router.get('/videos/suggestions', async (req, res) => {
 
   // Live lookups run on the signed-in Google user's own account. Visitors who
   // are not signed in get the bundled ambience list.
-  const accessToken = req.isAuthenticated() && req.user.provider === 'google'
-    ? req.user.accessToken
-    : null;
-  if (!accessToken) {
+  const signedInWithGoogle = req.isAuthenticated() && req.user.provider === 'google';
+  if (!signedInWithGoogle) {
     return res.json(fallbackPayload());
   }
-  const authHeader = { Authorization: `Bearer ${accessToken}` };
 
   try {
     const searchParams = new URLSearchParams({
@@ -385,10 +373,8 @@ router.get('/videos/suggestions', async (req, res) => {
       relevanceLanguage: 'en',
     });
 
-    const searchRes = await fetchWithTimeout(
-      `https://www.googleapis.com/youtube/v3/search?${searchParams}`,
-      { headers: authHeader }
-    );
+    const searchRes = await authorizedFetch(req,
+      `https://www.googleapis.com/youtube/v3/search?${searchParams}`);
     if (!searchRes.ok) {
       return res.json(fallbackPayload());
     }
@@ -406,10 +392,8 @@ router.get('/videos/suggestions', async (req, res) => {
       maxResults: String(Math.min(videoIds.length, 50)),
     });
 
-    const detailsRes = await fetchWithTimeout(
-      `https://www.googleapis.com/youtube/v3/videos?${detailsParams}`,
-      { headers: authHeader }
-    );
+    const detailsRes = await authorizedFetch(req,
+      `https://www.googleapis.com/youtube/v3/videos?${detailsParams}`);
     if (!detailsRes.ok) {
       return res.json(fallbackPayload());
     }

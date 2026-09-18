@@ -183,6 +183,12 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+// Users stay signed in for 90 days, renewed on every visit (rolling), so anyone
+// who opens xwall at least once a quarter is never signed out. Their hourly
+// provider tokens are renewed in the background (lib/tokens.js). Admin
+// sessions override this with a much shorter lifetime (routes/admin.js).
+const SESSION_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+
 // Use PostgreSQL-backed session store in non-test environments so sessions
 // survive server restarts and scale across multiple instances.
 const sessionConfig = {
@@ -197,7 +203,7 @@ const sessionConfig = {
     secure:   process.env.NODE_ENV === 'production',
     // Lax keeps OAuth callback sessions reliable across Chrome/Safari.
     sameSite: 'lax',
-    maxAge:   24 * 60 * 60 * 1000, // 24 h
+    maxAge:   SESSION_MAX_AGE_MS,
   },
 };
 
@@ -207,7 +213,7 @@ if (process.env.NODE_ENV !== 'test') {
     pool,
     tableName:            'sessions',
     createTableIfMissing: true,
-    ttl:                  86400, // 24 h in seconds
+    ttl:                  SESSION_MAX_AGE_MS / 1000, // fallback; the cookie's expiry is used
     pruneSessionInterval: 3600,  // prune expired sessions every hour
   });
 }

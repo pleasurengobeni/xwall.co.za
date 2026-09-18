@@ -71,7 +71,11 @@ router.get(
       'email',
       'https://www.googleapis.com/auth/youtube.readonly',
     ],
-    prompt: 'select_account',
+    // Offline access makes Google issue a refresh token, so the session can
+    // renew its hourly access token instead of signing the user out. Google
+    // only returns one on a consent screen, hence prompt=consent.
+    accessType: 'offline',
+    prompt: 'select_account consent',
     includeGrantedScopes: true,
   })
 );
