@@ -13,7 +13,7 @@ const {
 
 // Events the client is allowed to record. Anything else is rejected so the
 // events table can't be filled with arbitrary junk.
-const TRACKABLE_EVENTS = new Set(['mode_select', 'video_select', 'launch', 'clock_style_select']);
+const TRACKABLE_EVENTS = new Set(['mode_select', 'video_select', 'launch', 'clock_style_select', 'player_error']);
 
 // Upstream quota protection: YouTube search costs 100 units per call against a
 // 10k/day default quota, so identical requests are served from memory.

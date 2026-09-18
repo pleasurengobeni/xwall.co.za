@@ -36,6 +36,32 @@ const Player = (() => {
   let _playRequested = false;
   const YT_MAX_SKIP_ATTEMPTS = 6;
 
+  // What the IFrame API's error codes actually mean for a listener. Without
+  // these the transport just went quiet and gave no clue why.
+  const YT_ERRORS = {
+    2:   'That playlist link is not valid',
+    5:   'This track will not play in this browser',
+    100: 'Track unavailable - it was removed, or the playlist is private',
+    101: 'The owner does not allow this track to play outside YouTube',
+    150: 'The owner does not allow this track to play outside YouTube',
+  };
+  let _lastErrorMessage = '';
+
+  function _failureMessage() {
+    return _lastErrorMessage || _contextTitle || 'Playback unavailable';
+  }
+
+  // Report playback failures so they show up in the admin dashboard.
+  function _trackPlayerError(code) {
+    try {
+      fetch('/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'player_error', data: { provider: 'youtube', code: Number(code) || 0 } }),
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   // ── YouTube IFrame API loader ─────────────────────────────────────────────
   // Called once; resolved when window.onYouTubeIframeAPIReady fires
   function _ensureYtApi() {
@@ -109,7 +135,7 @@ const Player = (() => {
       if (_provider !== 'youtube' || !_ytPlayer || _isPlaying) return;
       if (!_recoverFromYoutubeError()) {
         _setPlaying(false);
-        _setCurrentTitle(_contextTitle || 'Playback unavailable');
+        _setCurrentTitle(_failureMessage());
       }
     }, 6000);
   }
@@ -298,15 +324,20 @@ const Player = (() => {
           _setPlaying(s === YT.PlayerState.PLAYING);
         },
         onError: (e) => {
-          console.error('YouTube player error:', e?.data);
+          const code = e?.data;
+          console.error('YouTube player error:', code);
+          _lastErrorMessage = YT_ERRORS[code] || `Playback error (code ${code})`;
+          _trackPlayerError(code);
           if (!_isPlaying) {
             _setPlaying(false);
-            _setCurrentTitle('Press Play to start music');
+            // A playlist that cannot be embedded at all fails before playback
+            // ever starts, so say why instead of inviting another press.
+            _setCurrentTitle(YT_ERRORS[code] || 'Press Play to start music');
             return;
           }
           if (_recoverFromYoutubeError()) return;
           _setPlaying(false);
-          _setCurrentTitle(_contextTitle || 'Playback unavailable');
+          _setCurrentTitle(_failureMessage());
         },
       },
       });
@@ -439,8 +470,9 @@ const Player = (() => {
   // ── Stop / tear down ──────────────────────────────────────────────────────
   function stop(hidePanel = true) {
     _clearYtRecoveryTimer();
-    _ytSkipAttempts = 0;
-    _playRequested  = false;
+    _ytSkipAttempts   = 0;
+    _playRequested    = false;
+    _lastErrorMessage = '';
     if (_ytPlayer) { _ytCall('stopVideo'); _ytCall('destroy'); _ytPlayer = null; }
     spEmbed.src = '';
     spEmbed.classList.add('hidden');

@@ -21,8 +21,40 @@ const trackVisitor = require('./middleware/track');
 
 require('./config/passport');
 
+const fs = require('fs');
+
 const app = express();
 const PUBLIC_DIR = path.join(__dirname, 'public');
+
+// ── Asset versioning ─────────────────────────────────────────────────────────
+// index.html is served no-cache, but the browser used to be free to keep an
+// older /js/app.js alongside it, so a deploy could leave Chrome running new
+// HTML against stale JavaScript. Every local script/stylesheet URL therefore
+// carries ?v=<content hash>: a changed file gets a new URL and is always
+// fetched, while unchanged files stay cacheable.
+function _assetHash(publicPath) {
+  try {
+    const buf = fs.readFileSync(path.join(PUBLIC_DIR, publicPath));
+    return crypto.createHash('sha1').update(buf).digest('hex').slice(0, 10);
+  } catch (_) {
+    return null;
+  }
+}
+
+function _renderIndexHtml() {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  return html.replace(/(src|href)="(\/(?:js|css)\/[^"?]+)"/g, (match, attr, assetPath) => {
+    const hash = _assetHash(assetPath);
+    return hash ? `${attr}="${assetPath}?v=${hash}"` : match;
+  });
+}
+
+let _indexHtml = null;
+function indexHtml() {
+  // Cached after the first render; the file only changes on deploy (restart).
+  if (_indexHtml === null) _indexHtml = _renderIndexHtml();
+  return _indexHtml;
+}
 
 // Trust reverse-proxy headers (Nginx sets X-Forwarded-For / X-Forwarded-Proto).
 // TRUST_PROXY=1 in production; leave unset (0) for local dev without a proxy.
@@ -102,7 +134,21 @@ app.get('/ping', (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.status(200).json({ ok: true });
 });
-app.use(express.static(PUBLIC_DIR, { index: false, dotfiles: 'ignore', redirect: false }));
+app.use(express.static(PUBLIC_DIR, {
+  index:    false,
+  dotfiles: 'ignore',
+  redirect: false,
+  setHeaders(res, filePath, stat) {
+    // A versioned URL names one exact build of the file, so it can be cached
+    // hard. Anything unversioned must be revalidated on every load.
+    if (res.req.query && res.req.query.v) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+    void filePath; void stat;
+  },
+}));
 
 // ── Body parsing (size limits guard against request flooding) ─────────────────
 app.use(express.json({ limit: '10kb' }));
@@ -194,7 +240,7 @@ app.get('/terms-of-service', (_req, res) => {
 app.get('*', (req, res, next) => {
   if (path.extname(req.path) || req.path.includes('/.')) return next();
   res.set('Cache-Control', 'no-cache');
-  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+  res.type('html').send(indexHtml());
 });
 
 app.use((_req, res) => {
