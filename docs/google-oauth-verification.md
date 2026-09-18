@@ -6,13 +6,20 @@ verification. Registering the OAuth client is not the same as verifying it.
 
 Console: Google Cloud Console → **Google Auth Platform** (project: xwall).
 
+## Status
+
+**Submitted for verification on 18 September 2026.** Under review by Google.
+While it is under review, do not change scopes, branding or publishing status —
+Google warns that changes restart or delay the review. Reply to Google's
+emails in the same thread; the Verification Center shows the current state.
+
 ## Checklist
 
 - [x] **Domain ownership** — TXT record `google-site-verification=…` on
       `xwall.co.za` (DNS at hostdns / clusterdns). Keep it permanently: Google
       re-checks it.
-- [ ] **Search Console** — domain property `xwall.co.za` shows *Verified*.
-- [ ] **Branding** — <https://console.cloud.google.com/auth/branding>
+- [x] **Search Console** — domain property `xwall.co.za` shows *Verified*.
+- [x] **Branding** — <https://console.cloud.google.com/auth/branding>
   - App name: `xwall`
   - User support email and developer contact email set (the privacy policy
     and terms point users to the support email, so it must be monitored)
@@ -21,15 +28,15 @@ Console: Google Cloud Console → **Google Auth Platform** (project: xwall).
   - Terms of service: `https://xwall.co.za/terms-of-service`
   - Authorized domain: `xwall.co.za`
   - No logo for now (adding one triggers an extra review)
-- [ ] **Audience** — <https://console.cloud.google.com/auth/audience> →
+- [x] **Audience** — <https://console.cloud.google.com/auth/audience> →
       **Publish app** → status *In production*. While in *Testing*, Google
       expires refresh tokens after 7 days, which signs users out weekly.
-- [ ] **Data Access** — <https://console.cloud.google.com/auth/scopes>
+- [x] **Data Access** — <https://console.cloud.google.com/auth/scopes>
   - `…/auth/userinfo.email`, `…/auth/userinfo.profile`,
     `…/auth/youtube.readonly` — nothing else
   - Justification: paste the text below
-- [ ] **Demo video** — unlisted YouTube video, link added to the submission
-- [ ] **Submit** — <https://console.cloud.google.com/auth/verification> →
+- [x] **Demo video** — unlisted YouTube video, link added to the submission
+- [x] **Submit** — <https://console.cloud.google.com/auth/verification> →
       *Prepare for verification* → Submit
 
 ## Scope justification (current — paste as a whole)
