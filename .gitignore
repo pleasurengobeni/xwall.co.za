@@ -22,6 +22,11 @@ Thumbs.db
 .vscode/settings.json
 .idea/
 
+# Self-hosted ambient videos: large binaries live on the server, not in git.
+# Upload them with scripts/upload-media.sh.
+media/*
+!media/README.md
+
 # Build artifacts
 dist/
 build/

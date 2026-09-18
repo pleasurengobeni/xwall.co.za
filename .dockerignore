@@ -7,6 +7,9 @@ data/
 *.pem
 *.key
 
+# Ambient videos are mounted at runtime (docker-compose), not baked in
+media/
+
 # Installed fresh inside the image by `npm ci`
 node_modules/
 

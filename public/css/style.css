@@ -120,6 +120,15 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
 }
 .bg-video.loaded { opacity: 1; }
 
+/* Self-hosted ambient video (xwall originals) — fills the screen like the
+   YouTube background, cropping rather than letterboxing */
+.bg-video .bg-local-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 /* Subtle vignette overlay */
 .vignette {
   position: absolute;
@@ -1237,6 +1246,13 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   display: block;
   background: rgba(255,255,255,0.06);
 }
+
+/* Placeholder for your own videos that have no poster image */
+.vlib-thumb-local { display: block; }
+.vlib-thumb-local.vlib-thumb-fireplace { background: radial-gradient(ellipse 90% 70% at 50% 110%, #ff7a00 0%, #cc1100 45%, #1a0000 100%); }
+.vlib-thumb-local.vlib-thumb-rain      { background: linear-gradient(175deg, #1c3550 0%, #0a1624 60%, #04080f 100%); }
+.vlib-thumb-local.vlib-thumb-river     { background: linear-gradient(180deg, #145c3e 0%, #0a2e1e 55%, #02080a 100%); }
+.vlib-thumb-local.vlib-thumb-scenic    { background: radial-gradient(ellipse 120% 80% at 30% 40%, #3c1e78 0%, #0c0820 60%, #020210 100%); }
 
 .clock-style-thumb {
   width: 116px;

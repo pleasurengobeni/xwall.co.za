@@ -150,6 +150,15 @@ app.use(express.static(PUBLIC_DIR, {
   },
 }));
 
+// Self-hosted ambient videos. In production nginx serves /media/ straight from
+// disk and requests never reach Node; this covers local development.
+app.use('/media', express.static(process.env.MEDIA_DIR || path.join(__dirname, 'media'), {
+  index:    false,
+  dotfiles: 'ignore',
+  redirect: false,
+  maxAge:   '1d',
+}));
+
 // ── Body parsing (size limits guard against request flooding) ─────────────────
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false, limit: '10kb' }));

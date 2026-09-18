@@ -81,6 +81,13 @@
 
   const suggestedVideoLibrary = {};
   const suggestionRequested   = new Set();
+  // Self-hosted "xwall originals" per mode (from /api/media), shown first
+  const localVideoLibrary     = {};
+  const userPickedVideo       = new Set();
+
+  function _withLocal(mode, videos) {
+    return (localVideoLibrary[mode] || []).concat(videos || []);
+  }
 
   // Selected video ID per mode — default to first entry in each library
   const selectedVideoIds = {};
@@ -121,6 +128,29 @@
 
   // Show video library for the initial selection
   _showVideoLibrary(selectedMode);
+  _loadLocalMedia();
+
+  // Your own hosted videos become the default for each mode that has them,
+  // unless the visitor has already picked something else.
+  async function _loadLocalMedia() {
+    try {
+      const res = await fetch('/api/media');
+      if (!res.ok) return;
+      const { videos } = await res.json();
+      if (!videos || typeof videos !== 'object') return;
+      let changed = false;
+      Object.keys(videos).forEach((mode) => {
+        const list = Array.isArray(videos[mode]) ? videos[mode].filter((v) => v && v.local) : [];
+        if (!list.length) return;
+        localVideoLibrary[mode] = list;
+        if (!userPickedVideo.has(mode)) selectedVideoIds[mode] = list[0].id;
+        changed = true;
+      });
+      if (changed && selectedMode !== 'clock') _showVideoLibrary(selectedMode);
+    } catch (_) {
+      // No originals available: YouTube ambience carries on as before
+    }
+  }
 
   // ── Wallpaper card selection ──────────────────────────────────────────────
   cards.forEach((card) => {
@@ -166,11 +196,14 @@
         videos.map((v) => {
           const title = _escapeHtml(v.title);
           const meta = _escapeHtml(v.durationLabel || '30+ min');
-          const thumb = _escapeHtml(v.thumbnail || `https://i.ytimg.com/vi/${encodeURIComponent(v.id)}/mqdefault.jpg`);
+          const thumbUrl = v.thumbnail || (v.local ? null : `https://i.ytimg.com/vi/${encodeURIComponent(v.id)}/mqdefault.jpg`);
+          const thumbHtml = thumbUrl
+            ? `<img class="vlib-thumb" src="${_escapeHtml(thumbUrl)}" alt="${title}" loading="lazy" />`
+            : `<span class="vlib-thumb vlib-thumb-local vlib-thumb-${_escapeHtml(mode)}" aria-hidden="true"></span>`;
           return (
-            `<button class="vlib-card${v.id === activeId ? ' active' : ''}" ` +
+            `<button class="vlib-card${v.id === activeId ? ' active' : ''}${v.local ? ' vlib-card-local' : ''}" ` +
             `data-id="${_escapeHtml(v.id)}" data-mode="${_escapeHtml(mode)}" type="button" aria-label="${title}" aria-pressed="${v.id === activeId}">` +
-            `<img class="vlib-thumb" src="${thumb}" alt="${title}" loading="lazy" />` +
+            thumbHtml +
             `<span class="vlib-title">${title}</span>` +
             `<span class="vlib-meta">${meta}</span>` +
             `</button>`
@@ -187,6 +220,7 @@
         const m  = btn.dataset.mode;
         const id = btn.dataset.id;
         selectedVideoIds[m] = id;
+        userPickedVideo.add(m);
         _track('video_select', { mode: m, videoId: id });
         videoLibraryEl.querySelectorAll('.vlib-card').forEach((b) => {
           b.classList.toggle('active', b.dataset.id === id);
@@ -209,9 +243,9 @@
     }
 
     const suggestedVideos = suggestedVideoLibrary[mode];
-    const videosToRender = suggestedVideos && suggestedVideos.length
+    const videosToRender = _withLocal(mode, suggestedVideos && suggestedVideos.length
       ? suggestedVideos
-      : fallbackVideos;
+      : fallbackVideos);
 
     if (!selectedVideoIds[mode] || !videosToRender.some((v) => v.id === selectedVideoIds[mode])) {
       selectedVideoIds[mode] = videosToRender[0].id;
@@ -231,11 +265,12 @@
       .then((videos) => {
         if (!Array.isArray(videos) || !videos.length) return;
         suggestedVideoLibrary[mode] = videos;
-        if (!videos.some((v) => v.id === selectedVideoIds[mode])) {
-          selectedVideoIds[mode] = videos[0].id;
+        const combined = _withLocal(mode, videos);
+        if (!combined.some((v) => v.id === selectedVideoIds[mode])) {
+          selectedVideoIds[mode] = combined[0].id;
         }
         if (selectedMode === mode) {
-          _renderVideoLibrary(mode, videos);
+          _renderVideoLibrary(mode, combined);
         }
       })
       .catch(() => {
@@ -305,8 +340,11 @@
       ? suggestedVideoLibrary[mode]
       : [];
     const fallback = FALLBACK_VIDEO_LIBRARY[mode] || [];
+    const local = localVideoLibrary[mode] || [];
     const preferredId = selectedVideoIds[mode];
+    // Your own videos first, then YouTube as the fallback
     return [preferredId]
+      .concat(local.map((video) => video.id))
       .concat(suggested.map((video) => video.id))
       .concat(fallback.map((video) => video.id))
       .filter((id, index, arr) => id && arr.indexOf(id) === index);

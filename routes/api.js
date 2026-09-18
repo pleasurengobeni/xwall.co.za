@@ -1,5 +1,7 @@
 'use strict';
 const express = require('express');
+const fs      = require('fs');
+const path    = require('path');
 const router  = express.Router();
 
 const analytics = require('../db/analytics');
@@ -130,6 +132,72 @@ function sanitizeEventData(data) {
   }
   return Object.keys(clean).length ? clean : null;
 }
+
+// ── GET /api/media ───────────────────────────────────────────────────────────
+// Lists self-hosted ambient videos ("xwall originals"). Drop a file into
+// media/<mode>/ and it appears in the app — no code change or deploy needed.
+// nginx serves the files themselves straight from disk at /media/.
+//
+//   media/fireplace/cozy-hearth.mp4   (+ optional cozy-hearth.jpg poster)
+//   media/rain/…  media/river/…  media/space/…
+const MEDIA_FOLDERS = { fireplace: 'fireplace', rain: 'rain', river: 'river', space: 'scenic', scenic: 'scenic' };
+const MEDIA_VIDEO_EXT  = new Set(['.mp4', '.webm']);
+const MEDIA_POSTER_EXT = ['.jpg', '.jpeg', '.webp', '.png'];
+const MEDIA_SAFE_NAME  = /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/;
+let _mediaListing = { dir: null, at: 0, value: null };
+
+function _mediaDir() {
+  return process.env.MEDIA_DIR || path.join(__dirname, '..', 'media');
+}
+
+function _titleFromFilename(base) {
+  const words = base.replace(/[-_.]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return words ? words.replace(/\b\w/g, (c) => c.toUpperCase()) : 'Ambient';
+}
+
+function listLocalMedia() {
+  const dir = _mediaDir();
+  const now = Date.now();
+  if (_mediaListing.value && _mediaListing.dir === dir && now - _mediaListing.at < 30_000) {
+    return _mediaListing.value;
+  }
+
+  const videos = { fireplace: [], rain: [], river: [], scenic: [] };
+  let folders = [];
+  try { folders = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { folders = []; }
+
+  for (const folder of folders) {
+    const mode = folder.isDirectory() ? MEDIA_FOLDERS[folder.name] : null;
+    if (!mode) continue;
+    let files = [];
+    try { files = fs.readdirSync(path.join(dir, folder.name)); } catch (_) { continue; }
+    const present = new Set(files);
+
+    for (const file of files.sort()) {
+      const ext = path.extname(file).toLowerCase();
+      if (!MEDIA_VIDEO_EXT.has(ext) || !MEDIA_SAFE_NAME.test(file)) continue;
+      const base   = file.slice(0, -ext.length);
+      const poster = MEDIA_POSTER_EXT.map((e) => base + e).find((n) => present.has(n));
+      const src    = `/media/${folder.name}/${encodeURIComponent(file)}`;
+      videos[mode].push({
+        id:            `local:${src}`,
+        title:         _titleFromFilename(base),
+        src,
+        thumbnail:     poster ? `/media/${folder.name}/${encodeURIComponent(poster)}` : null,
+        durationLabel: 'xwall original',
+        local:         true,
+      });
+    }
+  }
+
+  _mediaListing = { dir, at: now, value: videos };
+  return videos;
+}
+
+router.get('/media', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json({ videos: listLocalMedia() });
+});
 
 // ── GET /api/weather ──────────────────────────────────────────────────────────
 // Server-side proxy: IP → coordinates (ip-api.com) → current weather (Open-Meteo).

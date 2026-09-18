@@ -36,6 +36,10 @@ services:
       - "127.0.0.1:3002:3000"
     env_file:
       - .env
+    # Self-hosted ambient videos, read-only. The app only lists them
+    # (/api/media); nginx serves the files straight from /opt/xwall/media.
+    volumes:
+      - ./media:/app/media:ro
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://xwall:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/xwall

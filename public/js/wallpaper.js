@@ -41,6 +41,14 @@ const Wallpaper = (() => {
   let _startupRecoveryTimer = null;
   let _awaitingUserUnmute = false;
   let _userUnmuteHandler = null;
+  // Self-hosted ambient video (xwall originals), served from /media/ by nginx
+  let _localVideo = null;
+  const LOCAL_PREFIX = 'local:';
+  const LOCAL_SRC_RE = /^\/media\/[A-Za-z0-9%._\-/]+$/;
+
+  function _isLocal(id) {
+    return typeof id === 'string' && id.startsWith(LOCAL_PREFIX);
+  }
 
   const BG_STARTUP_RECOVERY_MS = 4500;
 
@@ -82,6 +90,13 @@ const Wallpaper = (() => {
       try { _ytPlayer.destroy(); } catch (_) {}
       _ytPlayer = null;
     }
+    if (_localVideo) {
+      // Stop the download as well as playback
+      try { _localVideo.pause(); } catch (_) {}
+      _localVideo.removeAttribute('src');
+      try { _localVideo.load(); } catch (_) {}
+      _localVideo = null;
+    }
     bgVideo.innerHTML = `<div id="${BG_PLAYER_HOST_ID}"></div>`;
   }
 
@@ -109,8 +124,34 @@ const Wallpaper = (() => {
     _userUnmuteHandler = null;
   }
 
+  function _attemptAudibleLocal(video) {
+    video.muted  = false;
+    video.volume = 1;
+    const attempt = video.play();
+    if (attempt && typeof attempt.then === 'function') {
+      attempt
+        .then(() => {
+          _awaitingUserUnmute = false;
+          _clearUserUnmuteListeners();
+        })
+        .catch(() => {
+          // Sound not allowed yet: keep the picture playing muted and try
+          // again on the next tap or key press.
+          video.muted = true;
+          const retry = video.play();
+          if (retry && retry.catch) retry.catch(() => {});
+          _registerUserUnmuteListeners();
+        });
+    }
+  }
+
   function _attemptAudibleBackgroundFromGesture() {
-    if (!_wantsAudibleBackground || !_ytPlayer) return;
+    if (!_wantsAudibleBackground) return;
+    if (_localVideo) {
+      _attemptAudibleLocal(_localVideo);
+      return;
+    }
+    if (!_ytPlayer) return;
     try {
       _ytPlayer.unMute();
       _ytPlayer.setVolume(100);
@@ -193,9 +234,8 @@ const Wallpaper = (() => {
     const token = ++_loadToken;
     const candidates = _candidateIds.length ? _candidateIds.slice() : [VIDEO_IDS[mode]];
 
-    await _ensureYtApi();
-    if (token !== _loadToken) return;
-
+    // The YouTube API is only loaded when a YouTube candidate is reached, so a
+    // self-hosted video starts without waiting on it.
     _tryLoadCandidate(mode, candidates, token);
   }
 
@@ -204,6 +244,79 @@ const Wallpaper = (() => {
     if (!nextId || token !== _loadToken) return;
 
     _currentVideoId = nextId;
+
+    if (_isLocal(nextId)) {
+      _playLocal(mode, nextId.slice(LOCAL_PREFIX.length), candidates, token);
+      return;
+    }
+
+    if (!(window.YT && window.YT.Player)) {
+      _ensureYtApi().then(() => {
+        if (token === _loadToken) _createYtPlayer(mode, nextId, candidates, token);
+      });
+      return;
+    }
+    _createYtPlayer(mode, nextId, candidates, token);
+  }
+
+  // Plays one of your own videos with a plain <video> element. Starts muted
+  // (always allowed) and unmutes once the browser permits sound.
+  function _playLocal(mode, src, candidates, token) {
+    if (!LOCAL_SRC_RE.test(src)) {
+      _tryLoadCandidate(mode, candidates, token);
+      return;
+    }
+
+    _clearStartupRecoveryTimer();
+    bgVideo.innerHTML = '';
+
+    const video = document.createElement('video');
+    video.className    = 'bg-local-video';
+    video.muted        = true;
+    video.defaultMuted = true;
+    video.loop         = true;
+    video.autoplay     = true;
+    video.playsInline  = true;
+    video.preload      = 'auto';
+    video.setAttribute('muted', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('aria-hidden', 'true');
+    video.src = src;
+    _localVideo = video;
+
+    let triedSound = false;
+    video.addEventListener('playing', () => {
+      if (token !== _loadToken || _localVideo !== video) return;
+      _clearStartupRecoveryTimer();
+      bgVideo.classList.add('loaded');
+      // Try for sound once automatically; further attempts wait for a gesture
+      if (_wantsAudibleBackground && video.muted && !triedSound) {
+        triedSound = true;
+        _attemptAudibleLocal(video);
+      }
+    });
+
+    video.addEventListener('error', () => {
+      if (token !== _loadToken || _localVideo !== video) return;
+      bgVideo.classList.remove('loaded');
+      _destroyPlayer();
+      _tryLoadCandidate(mode, candidates, token);
+    });
+
+    bgVideo.appendChild(video);
+    const started = video.play();
+    if (started && started.catch) started.catch(() => {});
+
+    // Same guard as the YouTube path: move on if nothing starts in time
+    _startupRecoveryTimer = setTimeout(() => {
+      if (token !== _loadToken) return;
+      if (bgVideo.classList.contains('loaded')) return;
+      _destroyPlayer();
+      _tryLoadCandidate(mode, candidates, token);
+    }, BG_STARTUP_RECOVERY_MS);
+  }
+
+  function _createYtPlayer(mode, nextId, candidates, token) {
     _ensurePlayerHost();
 
     // Guard against cases where the iframe initializes but never emits onReady.

@@ -146,10 +146,10 @@ describe('Wallpaper rain mode coordination', () => {
 describe('Wallpaper.set() idempotency', () => {
   it('does not fire timers again when same mode called twice', () => {
     Wallpaper.set('river');
-    const playerSpy = jest.spyOn(YT, 'Player');
+    // Count only what the second, identical call does
+    const before = YT.Player.mock.calls.length;
     Wallpaper.set('river'); // no-op
-    expect(playerSpy).not.toHaveBeenCalled();
-    playerSpy.mockRestore();
+    expect(YT.Player.mock.calls.length).toBe(before);
   });
 });
 
@@ -201,6 +201,69 @@ describe('Wallpaper.stop() then set() again', () => {
     await flushAsync();
     expect(YT.Player).toHaveBeenCalledTimes(2);
     expect(Wallpaper.current()).toBe('fireplace');
+  });
+});
+
+// ── Self-hosted videos (xwall originals served from /media/) ────────────────
+describe('Wallpaper self-hosted video', () => {
+  beforeAll(() => {
+    // jsdom has no media playback; stub what the player calls
+    window.HTMLMediaElement.prototype.play  = jest.fn(() => Promise.resolve());
+    window.HTMLMediaElement.prototype.pause = jest.fn();
+    window.HTMLMediaElement.prototype.load  = jest.fn();
+  });
+
+  const localVideo = () => document.querySelector('#bg-video video');
+
+  it('plays a /media/ file in a <video> element without touching YouTube', () => {
+    Wallpaper.set('clock');
+    Wallpaper.set('fireplace', ['local:/media/fireplace/cozy-hearth.mp4']);
+
+    const video = localVideo();
+    expect(video).not.toBeNull();
+    expect(video.getAttribute('src')).toBe('/media/fireplace/cozy-hearth.mp4');
+    expect(video.muted).toBe(true);   // muted start is always allowed to autoplay
+    expect(video.loop).toBe(true);
+    expect(YT.Player).not.toHaveBeenCalled();
+  });
+
+  it('fades the video in once it is actually playing', () => {
+    Wallpaper.set('clock');
+    Wallpaper.set('rain', ['local:/media/rain/window.mp4']);
+    const bgVideo = document.getElementById('bg-video');
+    expect(bgVideo.classList.contains('loaded')).toBe(false);
+
+    localVideo().dispatchEvent(new Event('playing'));
+    expect(bgVideo.classList.contains('loaded')).toBe(true);
+  });
+
+  it('falls back to the next candidate (YouTube) if the file fails to load', () => {
+    Wallpaper.set('clock');
+    Wallpaper.set('river', ['local:/media/river/missing.mp4', 'ytFallback1']);
+
+    localVideo().dispatchEvent(new Event('error'));
+    expect(localVideo()).toBeNull();
+    expect(YT.Player).toHaveBeenCalledTimes(1);
+    expect(YT.Player.mock.calls[0][1].videoId).toBe('ytFallback1');
+  });
+
+  it('refuses sources outside /media/ and moves on', () => {
+    Wallpaper.set('clock');
+    Wallpaper.set('scenic', ['local:https://evil.example/x.mp4', 'local:javascript:alert(1)', 'ytSafe']);
+
+    expect(localVideo()).toBeNull();
+    expect(YT.Player).toHaveBeenCalledTimes(1);
+    expect(YT.Player.mock.calls[0][1].videoId).toBe('ytSafe');
+  });
+
+  it('stops and removes the video when leaving the wallpaper', () => {
+    Wallpaper.set('clock');
+    Wallpaper.set('fireplace', ['local:/media/fireplace/cozy-hearth.mp4']);
+    expect(localVideo()).not.toBeNull();
+
+    Wallpaper.stop();
+    expect(localVideo()).toBeNull();
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
   });
 });
 

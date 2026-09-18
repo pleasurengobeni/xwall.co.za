@@ -376,3 +376,63 @@ describe('playlist search — runs on the user\'s own account', () => {
     expect(json).toHaveBeenCalledWith({ error: 'Invalid Credentials', reauth: true });
   });
 });
+
+describe('GET /api/media — self-hosted videos', () => {
+  const fs   = require('fs');
+  const os   = require('os');
+  const path = require('path');
+  const originalDir = process.env.MEDIA_DIR;
+  let dir;
+
+  const touch = (rel) => {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), 'x');
+  };
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xwall-media-'));
+    process.env.MEDIA_DIR = dir;
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (originalDir === undefined) delete process.env.MEDIA_DIR;
+    else process.env.MEDIA_DIR = originalDir;
+  });
+
+  it('lists videos per mode with titles and optional posters', async () => {
+    touch('fireplace/cozy-hearth.mp4');
+    touch('fireplace/cozy-hearth.jpg');
+    touch('rain/window_at-night.webm');
+    touch('space/deep-drift.mp4');           // "space" folder feeds the scenic mode
+
+    const res = await request(app).get('/api/media');
+    expect(res.status).toBe(200);
+    expect(res.body.videos.fireplace).toEqual([{
+      id: 'local:/media/fireplace/cozy-hearth.mp4',
+      title: 'Cozy Hearth',
+      src: '/media/fireplace/cozy-hearth.mp4',
+      thumbnail: '/media/fireplace/cozy-hearth.jpg',
+      durationLabel: 'xwall original',
+      local: true,
+    }]);
+    expect(res.body.videos.rain[0]).toMatchObject({ title: 'Window At Night', thumbnail: null });
+    expect(res.body.videos.scenic[0].src).toBe('/media/space/deep-drift.mp4');
+  });
+
+  it('ignores non-video files, unsafe names and unknown folders', async () => {
+    touch('fireplace/notes.txt');
+    touch('fireplace/.hidden.mp4');
+    touch('fireplace/bad name.mp4');
+    touch('secrets/leak.mp4');
+
+    const res = await request(app).get('/api/media');
+    expect(res.status).toBe(200);
+    expect(res.body.videos).toEqual({ fireplace: [], rain: [], river: [], scenic: [] });
+  });
+
+  it('returns empty lists when the media folder does not exist', async () => {
+    process.env.MEDIA_DIR = path.join(dir, 'does-not-exist');
+    const res = await request(app).get('/api/media');
+    expect(res.body.videos).toEqual({ fireplace: [], rain: [], river: [], scenic: [] });
+  });
+});
