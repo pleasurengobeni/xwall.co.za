@@ -241,10 +241,30 @@ async function _recentEvents() {
   return rows.map((r) => ({ ...r, timestamp: Number(r.timestamp) }));
 }
 
+// ── Retention ─────────────────────────────────────────────────────────────────
+// The privacy policy promises analytics are deleted after 12 months (POPIA
+// requires personal information not be kept longer than needed). Called at
+// startup and daily from server.js.
+const RETENTION_MONTHS = 12;
+
+async function pruneExpired(months = RETENTION_MONTHS) {
+  const interval = `${Math.max(1, parseInt(months, 10) || RETENTION_MONTHS)} months`;
+  const pv = await pool.query(
+    'DELETE FROM page_views WHERE timestamp < NOW() - $1::interval', [interval]);
+  const ev = await pool.query(
+    'DELETE FROM events WHERE timestamp < NOW() - $1::interval', [interval]);
+  const vi = await pool.query(
+    'DELETE FROM visitors WHERE last_seen < NOW() - $1::interval', [interval]);
+  return { pageViews: pv.rowCount, events: ev.rowCount, visitors: vi.rowCount };
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 /** Drain the connection pool — call on SIGTERM for graceful shutdown. */
 async function close() {
   await pool.end();
 }
 
-module.exports = { init, close, recordVisit, recordEvent, recordAuth, getStats, hashVisitor };
+module.exports = {
+  init, close, recordVisit, recordEvent, recordAuth, getStats, hashVisitor,
+  pruneExpired, RETENTION_MONTHS,
+};

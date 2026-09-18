@@ -285,6 +285,16 @@ if (require.main === module) {
       // to send headers and body.
       server.headersTimeout = 20_000;
       server.requestTimeout = 30_000;
+
+      // Enforce the analytics retention period stated in the privacy policy
+      const prune = () => analytics.pruneExpired()
+        .then((n) => {
+          const total = n.pageViews + n.events + n.visitors;
+          if (total) console.log(`Retention: deleted ${total} analytics rows older than ${analytics.RETENTION_MONTHS} months`);
+        })
+        .catch((err) => console.error('Retention prune failed:', err.message));
+      prune();
+      setInterval(prune, 24 * 60 * 60 * 1000).unref();
     })
     .catch((err) => {
       console.error('Failed to initialise database:', err.message);

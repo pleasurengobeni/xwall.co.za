@@ -860,6 +860,16 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   text-underline-offset: 2px;
 }
 
+/* Key limits of liability, shown prominently before the full terms */
+.legal-notice {
+  margin: 0.9rem 0 0.4rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid rgba(255, 196, 92, 0.45);
+  border-radius: 12px;
+  background: rgba(255, 196, 92, 0.08);
+}
+.legal-notice ul { margin-bottom: 0.4rem; }
+
 .privacy-card code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88em;
