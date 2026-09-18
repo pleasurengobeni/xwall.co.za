@@ -239,10 +239,15 @@ router.get('/playlists', requireAuth, async (req, res) => {
 });
 
 // ── GET /api/playlists/search?q=lofi&limit=8 ──────────────────────────────
-// Search YouTube for public playlists by keyword. No auth required.
-// Validation and the result cache run before the per-IP daily limit, so only
-// searches that actually call the YouTube API use up a visitor's allowance.
+// Searches with the signed-in user's own account: Google users search YouTube
+// with their OAuth token, Spotify users search Spotify with theirs. Visitors
+// who are not signed in are asked to sign in — the app never searches on a
+// shared server-side API key.
 router.get('/playlists/search', (req, res, next) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Sign in to search playlists', signin: true });
+  }
+
   const q = String(req.query.q || '').trim().replace(/\s+/g, ' ').slice(0, 100);
   if (!q) return res.status(400).json({ error: 'Missing q parameter' });
 
@@ -250,48 +255,86 @@ router.get('/playlists/search', (req, res, next) => {
   const limit = Number.isFinite(requestedLimit)
     ? Math.min(Math.max(requestedLimit, 1), 20)
     : 8;
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    return res.status(503).json({ error: 'Search unavailable' });
-  }
 
-  const cacheKey = `${limit}:${q.toLowerCase()}`;
+  // Results are public data, so the cache is shared; the key includes the
+  // provider so YouTube and Spotify results never mix.
+  const provider = req.user.provider === 'spotify' ? 'spotify' : 'youtube';
+  const cacheKey = `${provider}:${limit}:${q.toLowerCase()}`;
   const cached = searchCache.get(cacheKey);
-  if (cached) return res.json({ playlists: cached });
+  if (cached) return res.json({ playlists: cached, provider });
 
-  res.locals.search = { q, limit, apiKey, cacheKey };
+  res.locals.search = { q, limit, provider, cacheKey };
   next();
 }, searchLimit, async (req, res) => {
-  const { q, limit, apiKey, cacheKey } = res.locals.search;
+  const { q, limit, provider, cacheKey } = res.locals.search;
+  const accessToken = req.user.accessToken;
 
   try {
-    const url = new URL('https://www.googleapis.com/youtube/v3/search');
-    url.searchParams.set('part', 'snippet');
-    url.searchParams.set('type', 'playlist');
-    url.searchParams.set('q', q);
-    url.searchParams.set('maxResults', String(limit));
-    url.searchParams.set('safeSearch', 'moderate');
-    url.searchParams.set('key', apiKey);
-
-    const searchRes = await fetchWithTimeout(url.toString());
-    if (!searchRes.ok) {
-      return res.status(502).json({ error: 'YouTube search failed' });
-    }
-    const data = await searchRes.json();
-    const playlists = (data.items || []).map((item) => ({
-      id:       item.id?.playlistId,
-      name:     item.snippet?.title ?? 'Untitled',
-      image:    item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url ?? null,
-      provider: 'youtube',
-    })).filter((p) => p.id);
+    const playlists = provider === 'spotify'
+      ? await _searchSpotifyPlaylists(q, limit, accessToken, res)
+      : await _searchYoutubePlaylists(q, limit, accessToken, res);
+    if (!playlists) return; // helper already sent an error response
 
     searchCache.set(cacheKey, playlists);
-    res.json({ playlists });
+    res.json({ playlists, provider });
   } catch (err) {
     console.error('Playlist search error:', err.message);
     res.status(500).json({ error: 'Search failed' });
   }
 });
+
+async function _searchYoutubePlaylists(q, limit, accessToken, res) {
+  const url = new URL('https://www.googleapis.com/youtube/v3/search');
+  url.searchParams.set('part', 'snippet');
+  url.searchParams.set('type', 'playlist');
+  url.searchParams.set('q', q);
+  url.searchParams.set('maxResults', String(limit));
+  url.searchParams.set('safeSearch', 'moderate');
+
+  const searchRes = await fetchWithTimeout(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!searchRes.ok) {
+    const err = await searchRes.json().catch(() => ({}));
+    res.status(searchRes.status === 401 ? 401 : 502)
+      .json(upstreamError(searchRes.status, err, 'YouTube search failed'));
+    return null;
+  }
+
+  const data = await searchRes.json();
+  return (data.items || []).map((item) => ({
+    id:       item.id?.playlistId,
+    name:     item.snippet?.title ?? 'Untitled',
+    image:    item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url ?? null,
+    provider: 'youtube',
+  })).filter((p) => p.id);
+}
+
+async function _searchSpotifyPlaylists(q, limit, accessToken, res) {
+  const url = new URL('https://api.spotify.com/v1/search');
+  url.searchParams.set('q', q);
+  url.searchParams.set('type', 'playlist');
+  url.searchParams.set('limit', String(limit));
+
+  const searchRes = await fetchWithTimeout(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!searchRes.ok) {
+    const err = await searchRes.json().catch(() => ({}));
+    res.status(searchRes.status === 401 ? 401 : 502)
+      .json(upstreamError(searchRes.status, err, 'Spotify search failed'));
+    return null;
+  }
+
+  const data = await searchRes.json();
+  // Spotify occasionally returns null entries in this array
+  return (data.playlists?.items || []).filter(Boolean).map((p) => ({
+    id:       p.id,
+    name:     p.name ?? 'Untitled',
+    image:    p.images?.[0]?.url ?? null,
+    provider: 'spotify',
+  })).filter((p) => p.id);
+}
 
 // ── GET /api/videos/suggestions?mode=fireplace&limit=8 ─────────────────────
 // Returns embeddable YouTube ambience videos filtered to >= 30 minutes.
@@ -309,20 +352,26 @@ router.get('/videos/suggestions', async (req, res) => {
 
   const fallbackPayload = () => ({ videos: fallbackVideosForMode(mode, limit), fallback: true });
 
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    return res.json(fallbackPayload());
-  }
-
+  // Cached results are public video listings, so everyone can be served from
+  // them once a signed-in visitor has populated the cache.
   const canonicalMode = mode === 'space' ? 'scenic' : mode;
   const cached = suggestionCache.get(canonicalMode);
   if (cached) {
     return res.json({ videos: cached.slice(0, limit), fallback: false });
   }
 
+  // Live lookups run on the signed-in Google user's own account. Visitors who
+  // are not signed in get the bundled ambience list.
+  const accessToken = req.isAuthenticated() && req.user.provider === 'google'
+    ? req.user.accessToken
+    : null;
+  if (!accessToken) {
+    return res.json(fallbackPayload());
+  }
+  const authHeader = { Authorization: `Bearer ${accessToken}` };
+
   try {
     const searchParams = new URLSearchParams({
-      key:             apiKey,
       part:            'snippet',
       type:            'video',
       q:               query,
@@ -333,7 +382,10 @@ router.get('/videos/suggestions', async (req, res) => {
       relevanceLanguage: 'en',
     });
 
-    const searchRes = await fetchWithTimeout(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
+    const searchRes = await fetchWithTimeout(
+      `https://www.googleapis.com/youtube/v3/search?${searchParams}`,
+      { headers: authHeader }
+    );
     if (!searchRes.ok) {
       return res.json(fallbackPayload());
     }
@@ -346,13 +398,15 @@ router.get('/videos/suggestions', async (req, res) => {
     if (!videoIds.length) return res.json(fallbackPayload());
 
     const detailsParams = new URLSearchParams({
-      key:  apiKey,
       part: 'snippet,contentDetails',
       id:   videoIds.join(','),
       maxResults: String(Math.min(videoIds.length, 50)),
     });
 
-    const detailsRes = await fetchWithTimeout(`https://www.googleapis.com/youtube/v3/videos?${detailsParams}`);
+    const detailsRes = await fetchWithTimeout(
+      `https://www.googleapis.com/youtube/v3/videos?${detailsParams}`,
+      { headers: authHeader }
+    );
     if (!detailsRes.ok) {
       return res.json(fallbackPayload());
     }

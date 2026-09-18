@@ -396,22 +396,32 @@
       }
     }
 
-    // No saved match: YouTube search is limited per visitor per day, so it only
-    // runs when the user presses Enter rather than on every keystroke.
+    // No saved match. Searching uses the signed-in user's own account, and only
+    // runs on Enter rather than on every keystroke.
     _hidePlaylistDropdown();
-    if (q.length >= 2) {
-      _setHint('Press Enter to search YouTube playlists', 'playlist-hint');
-    }
+    if (q.length < 2) return;
+    _setHint(
+      authUser
+        ? `Press Enter to search ${authUser.provider === 'spotify' ? 'Spotify' : 'YouTube'}`
+        : 'Sign in with YouTube or Spotify to search, or paste a playlist link',
+      'playlist-hint'
+    );
   }
 
   let _searchInFlight = false;
 
-  async function _searchYoutube(query) {
+  async function _searchPlaylists(query) {
     if (_searchInFlight || query.length < 2) return;
+    if (!authUser) {
+      _hidePlaylistDropdown();
+      _setHint('Sign in with YouTube or Spotify to search, or paste a playlist link', 'playlist-hint');
+      return;
+    }
+    const providerName = authUser.provider === 'spotify' ? 'Spotify' : 'YouTube';
     _searchInFlight = true;
     _setHint('', 'playlist-hint');
     if (playlistDropdownEl) {
-      playlistDropdownEl.innerHTML = '<p class="pdrop-label pdrop-searching">Searching YouTube…</p>';
+      playlistDropdownEl.innerHTML = `<p class="pdrop-label pdrop-searching">Searching ${providerName}…</p>`;
       playlistDropdownEl.classList.remove('hidden');
     }
 
@@ -422,10 +432,16 @@
 
       if (!res.ok) {
         _hidePlaylistDropdown();
+        if (res.status === 401 && payload.reauth) {
+          // The provider token expired mid-session
+          await Auth.logout();
+          _setHint('Your sign-in expired. Sign in again to search.', 'playlist-hint');
+          return;
+        }
         _setHint(
-          res.status === 429
-            ? (payload.error || 'Daily search limit reached. Paste a playlist link instead.')
-            : 'Search is unavailable right now. Paste a playlist link instead.',
+          res.status === 401 ? 'Sign in with YouTube or Spotify to search, or paste a playlist link'
+            : res.status === 429 ? (payload.error || 'Daily search limit reached. Paste a playlist link instead.')
+              : `${providerName} search is unavailable right now. Paste a playlist link instead.`,
           'playlist-hint'
         );
         return;
@@ -434,15 +450,15 @@
       const playlists = Array.isArray(payload.playlists) ? payload.playlists : [];
       if (!playlists.length) {
         _hidePlaylistDropdown();
-        _setHint(`No YouTube playlists found for \u201c${query}\u201d`, 'playlist-hint');
+        _setHint(`No ${providerName} playlists found for \u201c${query}\u201d`, 'playlist-hint');
         return;
       }
 
       // Only present on searches that counted against the daily allowance
       const remaining = parseInt(res.headers.get('RateLimit-Remaining'), 10);
       const label = Number.isFinite(remaining)
-        ? `YouTube results \u00b7 ${remaining} search${remaining === 1 ? '' : 'es'} left today`
-        : 'YouTube results';
+        ? `${providerName} results \u00b7 ${remaining} left today`
+        : `${providerName} results`;
       _renderDropdownItems(playlists, label);
     } catch (_) {
       _hidePlaylistDropdown();
@@ -633,10 +649,10 @@
         items[Math.max(_dropdownActiveIndex, 0)].click();
         return;
       }
-      // Typed text that isn't a playlist link: search YouTube.
+      // Typed text that isn't a playlist link: search the user's provider.
       const raw = urlInput.value.trim();
       if (raw && !parsedPlaylist) {
-        _searchYoutube(raw);
+        _searchPlaylists(raw);
         return;
       }
       goMain();
@@ -814,12 +830,22 @@
   // ── Auth check (shows/hides home sign-in row + saves playlists) ───────────
   Auth.onAuthChange(async (user) => {
     authUser = user;
+    _updateSearchAffordance();
     if (user) {
       await _loadSavedPlaylists();
     } else {
       _hideSavedPlaylists();
     }
   });
+
+  // The placeholder tells visitors what the input can do for them right now.
+  function _updateSearchAffordance() {
+    urlInput.placeholder = authUser
+      ? `Paste a playlist link, or search ${authUser.provider === 'spotify' ? 'Spotify' : 'YouTube'} + Enter…`
+      : 'Paste a playlist link, or sign in to search…';
+  }
+
+  _updateSearchAffordance();
 
   await Auth.check();
 })();

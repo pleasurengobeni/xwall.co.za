@@ -49,16 +49,20 @@ exports.weather = rateLimit({
   message:  { error: 'Too many weather requests.' },
 });
 
-// GET /api/playlists/search — each uncached call costs 100 YouTube quota units.
-// Only searches that reach YouTube are counted (cached results are served
-// before this limiter), and failed upstream calls are refunded.
+// GET /api/playlists/search — searches run on the signed-in user's own
+// account, so the limit is per user rather than per IP. It exists only to stop
+// a runaway client from exhausting the shared YouTube project quota (each
+// uncached YouTube search costs 100 of 10,000 daily units); Spotify searches
+// cost no YouTube quota at all. Tune with SEARCH_LIMIT_PER_DAY.
+// Cached results are served before this limiter and failed calls are refunded.
 exports.search = rateLimit({
   ..._base,
   windowMs: 24 * 60 * 60 * 1000, // 24 h
-  max:      2,
+  max:      parseInt(process.env.SEARCH_LIMIT_PER_DAY, 10) || 50,
   skipFailedRequests: true,
+  keyGenerator: (req) => `u:${req.user?.id || 'anon'}`,
   message:  {
-    error: 'Daily search limit reached. Paste a playlist link instead, or try again tomorrow.',
+    error: 'Daily search limit reached for this account. Paste a playlist link instead, or try again tomorrow.',
     code:  'search_limit',
   },
 });

@@ -187,29 +187,34 @@ describe('playlist shaping — YouTube', () => {
 });
 
 describe('video suggestions', () => {
-  const originalApiKey = process.env.GOOGLE_API_KEY;
   let originalFetch;
 
-  beforeEach(() => {
-    originalFetch = global.fetch;
-    process.env.GOOGLE_API_KEY = 'test-google-key';
-  });
+  // The route is authenticated-optional: signed-in Google users get live
+  // results on their own token, everyone else gets the bundled list.
+  const router = require('../routes/api');
+  const suggestionHandler = () => {
+    const layer = router.stack.find((l) => l.route && l.route.path === '/videos/suggestions');
+    return layer.route.stack[layer.route.stack.length - 1].handle;
+  };
+  function makeReqRes({ authenticated = false, query = {} } = {}) {
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const req = {
+      query,
+      isAuthenticated: () => authenticated,
+      user: authenticated ? { provider: 'google', accessToken: 'user-token', id: 'u1' } : undefined,
+    };
+    return { req, res: { json, status }, json, status };
+  }
 
-  afterEach(() => {
-    global.fetch = originalFetch;
-    process.env.GOOGLE_API_KEY = originalApiKey;
-  });
+  beforeEach(() => { originalFetch = global.fetch; });
+  afterEach(() => { global.fetch = originalFetch; });
 
-  it('filters suggestions to 30+ minute embeddable videos and returns duration labels', async () => {
+  it("uses the signed-in user's token and filters to 30+ minute videos", async () => {
     global.fetch = jest.fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          items: [
-            { id: { videoId: 'long1' } },
-            { id: { videoId: 'short1' } },
-          ],
-        }),
+        json: async () => ({ items: [{ id: { videoId: 'long1' } }, { id: { videoId: 'short1' } }] }),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -229,19 +234,31 @@ describe('video suggestions', () => {
         }),
       });
 
-    const res = await request(app).get('/api/videos/suggestions?mode=scenic&limit=5');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({
+    const { req, res, json } = makeReqRes({ authenticated: true, query: { mode: 'scenic', limit: '5' } });
+    await suggestionHandler()(req, res);
+
+    // Both upstream calls carry the user's bearer token and no API key
+    for (const [url, options] of global.fetch.mock.calls) {
+      expect(options.headers.Authorization).toBe('Bearer user-token');
+      expect(url).not.toContain('key=');
+    }
+    expect(json).toHaveBeenCalledWith({
       fallback: false,
       videos: [
-        {
-          id: 'long1',
-          title: 'Long Space Video',
-          thumbnail: 'https://img/long.jpg',
-          durationLabel: '2h 5m',
-        },
+        { id: 'long1', title: 'Long Space Video', thumbnail: 'https://img/long.jpg', durationLabel: '2h 5m' },
       ],
     });
+  });
+
+  it('serves the bundled list to visitors who are not signed in', async () => {
+    global.fetch = jest.fn();
+    const { req, res, json } = makeReqRes({ authenticated: false, query: { mode: 'river', limit: '4' } });
+    await suggestionHandler()(req, res);
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    const payload = json.mock.calls[0][0];
+    expect(payload.fallback).toBe(true);
+    expect(payload.videos.length).toBeGreaterThan(0);
   });
 
   it('returns 400 for unsupported suggestion mode', async () => {
@@ -250,69 +267,112 @@ describe('video suggestions', () => {
     expect(res.body).toEqual({ error: 'Unsupported mode' });
   });
 
-  it('returns fallback suggestions when YouTube search fails', async () => {
+  it('falls back to the bundled list when the user\'s search fails', async () => {
     global.fetch = jest.fn().mockResolvedValueOnce({ ok: false, status: 403 });
 
-    const res = await request(app).get('/api/videos/suggestions?mode=fireplace&limit=4');
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.videos)).toBe(true);
-    expect(res.body.videos.length).toBeGreaterThan(0);
-    expect(res.body.fallback).toBe(true);
-    expect(res.body.videos[0]).toHaveProperty('id');
-    expect(res.body.videos[0]).toHaveProperty('title');
-    expect(res.body.videos[0]).toHaveProperty('thumbnail');
+    const { req, res, json } = makeReqRes({ authenticated: true, query: { mode: 'fireplace', limit: '4' } });
+    await suggestionHandler()(req, res);
+
+    const payload = json.mock.calls[0][0];
+    expect(payload.fallback).toBe(true);
+    expect(payload.videos[0]).toHaveProperty('id');
   });
 });
 
-describe('playlist search daily limit', () => {
-  const originalApiKey = process.env.GOOGLE_API_KEY;
+describe('playlist search — runs on the user\'s own account', () => {
   let originalFetch;
+  const router = require('../routes/api');
 
-  const ytResponse = (id) => ({
-    ok: true,
-    json: async () => ({ items: [{ id: { playlistId: id }, snippet: { title: id } }] }),
+  // [gate, searchLimit, handler] — the gate and the handler are what we drive
+  const searchLayers = () => {
+    const layer = router.stack.find((l) => l.route && l.route.path === '/playlists/search');
+    return layer.route.stack.map((s) => s.handle);
+  };
+
+  function makeReqRes(user, query) {
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const res = { json, status, locals: {} };
+    const req = { query, isAuthenticated: () => Boolean(user), user };
+    return { req, res, json, status };
+  }
+
+  beforeEach(() => { originalFetch = global.fetch; });
+  afterEach(() => { global.fetch = originalFetch; });
+
+  it('asks unauthenticated visitors to sign in instead of using a server key', async () => {
+    const res = await request(app).get('/api/playlists/search?q=lofi');
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: 'Sign in to search playlists', signin: true });
   });
 
-  beforeEach(() => {
-    originalFetch = global.fetch;
-    process.env.GOOGLE_API_KEY = 'test-google-key';
-    // Rate limits are bypassed under NODE_ENV=test; enable them for this suite.
-    process.env.NODE_ENV = 'development';
+  it("searches YouTube with the Google user's token", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        items: [{ id: { playlistId: 'PLx' }, snippet: { title: 'Lofi', thumbnails: { medium: { url: 'https://i/y.jpg' } } } }],
+      }),
+    });
+
+    const [gate, , handler] = searchLayers();
+    const { req, res, json } = makeReqRes(
+      { provider: 'google', accessToken: 'g-token', id: 'u1' },
+      { q: 'lofi beats', limit: '8' }
+    );
+    await new Promise((resolve) => gate(req, res, resolve));
+    await handler(req, res);
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('googleapis.com/youtube/v3/search');
+    expect(url).not.toContain('key=');
+    expect(options.headers.Authorization).toBe('Bearer g-token');
+    expect(json).toHaveBeenCalledWith({
+      provider: 'youtube',
+      playlists: [{ id: 'PLx', name: 'Lofi', image: 'https://i/y.jpg', provider: 'youtube' }],
+    });
   });
 
-  afterEach(() => {
-    process.env.NODE_ENV = 'test';
-    global.fetch = originalFetch;
-    process.env.GOOGLE_API_KEY = originalApiKey;
+  it("searches Spotify with the Spotify user's token (no YouTube quota)", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        playlists: { items: [null, { id: 'sp1', name: 'Chill', images: [{ url: 'https://i/s.jpg' }] }] },
+      }),
+    });
+
+    const [gate, , handler] = searchLayers();
+    const { req, res, json } = makeReqRes(
+      { provider: 'spotify', accessToken: 's-token', id: 'u2' },
+      { q: 'chill vibes', limit: '8' }
+    );
+    await new Promise((resolve) => gate(req, res, resolve));
+    await handler(req, res);
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('api.spotify.com/v1/search');
+    expect(options.headers.Authorization).toBe('Bearer s-token');
+    expect(json).toHaveBeenCalledWith({
+      provider: 'spotify',
+      playlists: [{ id: 'sp1', name: 'Chill', image: 'https://i/s.jpg', provider: 'spotify' }],
+    });
   });
 
-  it('allows 2 uncached searches per IP per day; cached and failed searches are free', async () => {
-    global.fetch = jest.fn()
-      .mockResolvedValueOnce({ ok: false, status: 403 })   // upstream failure → refunded
-      .mockResolvedValueOnce(ytResponse('PLone'))
-      .mockResolvedValueOnce(ytResponse('PLtwo'));
+  it('flags an expired provider token so the client can prompt a fresh sign-in', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: { message: 'Invalid Credentials' } }),
+    });
 
-    const search = (q) => request(app).get(`/api/playlists/search?q=${q}&limit=8`);
+    const [gate, , handler] = searchLayers();
+    const { req, res, status, json } = makeReqRes(
+      { provider: 'google', accessToken: 'stale', id: 'u3' },
+      { q: 'expired token query', limit: '8' }
+    );
+    await new Promise((resolve) => gate(req, res, resolve));
+    await handler(req, res);
 
-    expect((await search('limit-fail')).status).toBe(502);
-
-    const first = await search('limit-one');
-    expect(first.status).toBe(200);
-    expect(first.headers['ratelimit-remaining']).toBe('1');
-
-    // Same query again (different case/spacing) is served from cache, not counted
-    expect((await search('LIMIT-ONE%20')).status).toBe(200);
-
-    const second = await search('limit-two');
-    expect(second.status).toBe(200);
-    expect(second.headers['ratelimit-remaining']).toBe('0');
-
-    const third = await search('limit-three');
-    expect(third.status).toBe(429);
-    expect(third.body.code).toBe('search_limit');
-    expect(global.fetch).toHaveBeenCalledTimes(3);
-
-    // Cached queries still work after the allowance is used up
-    expect((await search('limit-two')).status).toBe(200);
+    expect(status).toHaveBeenCalledWith(401);
+    expect(json).toHaveBeenCalledWith({ error: 'Invalid Credentials', reauth: true });
   });
 });
