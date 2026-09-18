@@ -288,6 +288,12 @@ const Wallpaper = (() => {
     clearTimeout(fadeTimer);
     bgVideo.classList.remove('loaded');
     _destroyPlayer();
+    // Forget the active selection. set() short-circuits when the same mode and
+    // video are requested again, so leaving these set meant returning from the
+    // home view to the same wallpaper never rebuilt the player: no video, no
+    // ambient sound.
+    currentMode     = null;
+    _currentVideoId = null;
   }
 
   return { init, set, stop, current: () => currentMode };

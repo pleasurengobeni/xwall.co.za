@@ -31,6 +31,9 @@ const Player = (() => {
   let _ytRecoverTimer = null;
   let _progressUpdateTimer = null;
   let _ytSkipAttempts = 0;
+  // Set when the user presses play before the iframe has finished loading;
+  // honoured in onReady so the click is never silently dropped.
+  let _playRequested = false;
   const YT_MAX_SKIP_ATTEMPTS = 6;
 
   // ── YouTube IFrame API loader ─────────────────────────────────────────────
@@ -247,6 +250,18 @@ const Player = (() => {
       events: {
         onReady:       (e) => {
           _refreshYoutubeCurrentTitle();
+          if (_playRequested) {
+            // The user already pressed play while this was loading
+            _playRequested = false;
+            try {
+              e.target.unMute();
+              e.target.setVolume(100);
+              e.target.playVideo();
+            } catch (_) {}
+            _setPlaying(true);
+            _startYtRecoveryWatchdog();
+            return;
+          }
           try {
             e.target.mute();
             e.target.setVolume(0); // Ensure muted on init
@@ -339,6 +354,14 @@ const Player = (() => {
   }
 
   btnPlay.addEventListener('click', () => {
+    // Still loading: remember the intent instead of dropping the click
+    if (_provider === 'youtube' && (!_ytPlayer || typeof _ytPlayer.playVideo !== 'function')) {
+      _playRequested = true;
+      _setPlaying(true);
+      _setCurrentTitle(_contextTitle ? `${_contextTitle} - starting…` : 'Starting…');
+      return;
+    }
+
     if (_provider === 'youtube' && _ytPlayer) {
       if (_isPlaying) {
         _clearYtRecoveryTimer();
@@ -417,6 +440,7 @@ const Player = (() => {
   function stop(hidePanel = true) {
     _clearYtRecoveryTimer();
     _ytSkipAttempts = 0;
+    _playRequested  = false;
     if (_ytPlayer) { _ytCall('stopVideo'); _ytCall('destroy'); _ytPlayer = null; }
     spEmbed.src = '';
     spEmbed.classList.add('hidden');

@@ -186,6 +186,24 @@ describe('Wallpaper video loading', () => {
   });
 });
 
+// ── Returning to the wallpaper after visiting the home view ─────────────────
+describe('Wallpaper.stop() then set() again', () => {
+  it('rebuilds the player when the same mode is re-entered', async () => {
+    Wallpaper.set('fireplace', ['vid1']);
+    await flushAsync();
+    expect(YT.Player).toHaveBeenCalledTimes(1);
+
+    // Leaving for the home view tears the player down...
+    Wallpaper.stop();
+    // ...and coming back to the very same wallpaper must load it again,
+    // rather than being swallowed by the "already showing this" guard.
+    Wallpaper.set('fireplace', ['vid1']);
+    await flushAsync();
+    expect(YT.Player).toHaveBeenCalledTimes(2);
+    expect(Wallpaper.current()).toBe('fireplace');
+  });
+});
+
 // ── init() ────────────────────────────────────────────────────────────────────
 describe('Wallpaper.init()', () => {
   it('is callable without throwing', () => {
