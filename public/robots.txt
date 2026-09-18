@@ -2,3 +2,5 @@ User-agent: *
 Disallow: /admin
 Disallow: /api/
 Disallow: /auth/
+
+Sitemap: https://xwall.co.za/sitemap.xml
