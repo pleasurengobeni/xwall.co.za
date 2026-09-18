@@ -841,6 +841,33 @@ body { animation: pageIn 0.9s var(--ease-smooth) both; }
   font-size: clamp(0.9rem, 2.2vw, 1rem);
 }
 
+.privacy-card p + p { margin-top: 0.6rem; }
+
+/* The global reset strips list indentation, so restore it for legal pages */
+.privacy-card ul {
+  margin: 0.45rem 0 0.6rem;
+  padding-left: 1.3rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: clamp(0.9rem, 2.2vw, 1rem);
+}
+.privacy-card ul ul { margin: 0.25rem 0 0.2rem; }
+.privacy-card li + li { margin-top: 0.2rem; }
+
+.privacy-card a:not(.legal-back-link) {
+  color: #9cc4ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.privacy-card code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .legal-actions {
   display: flex;
   justify-content: flex-end;

@@ -15,32 +15,63 @@
         <a href="/" class="legal-back-link">Back to xwall</a>
       </div>
       <h1>Privacy Policy</h1>
-      <p><strong>Last updated:</strong> 6 May 2026</p>
+      <p><strong>Last updated:</strong> 18 September 2026</p>
 
       <h2>Who We Are</h2>
-      <p>xwall provides ambient wallpapers and optional music playlist features.</p>
+      <p>xwall (xwall.co.za) provides ambient wallpapers, a clock display and optional music playback from YouTube and Spotify playlists. Signing in is optional: the wallpapers, clock and pasted playlist links work without an account.</p>
 
-      <h2>Information We Collect</h2>
-      <p>When you sign in, we may receive basic profile information from your provider, such as your name, email address, and profile image.</p>
-      <p>We also store app usage and playlist preferences needed to provide core features.</p>
+      <h2>Google and YouTube Data</h2>
+      <p>If you choose to sign in with Google, xwall requests these permissions:</p>
+      <ul>
+        <li><strong>Basic profile and email</strong> — your name, profile picture and Google account ID, used to show who is signed in.</li>
+        <li><strong>View your YouTube account</strong> (<code>youtube.readonly</code>) — read-only access, used to:
+          <ul>
+            <li>list your YouTube playlists so you can pick one to play;</li>
+            <li>show your YouTube channel name when no playlists are found;</li>
+            <li>search YouTube for public playlists when you type a search and press Enter;</li>
+            <li>find long ambient background videos for the wallpaper modes.</li>
+          </ul>
+        </li>
+      </ul>
+      <p>xwall never modifies your YouTube account: it cannot upload, delete, like, comment, subscribe or change playlists. It does not read your watch history, subscriptions or private messages.</p>
+      <p><strong>Storage.</strong> The access token Google issues is kept only on our server, inside your sign-in session, and is never sent to your browser. Sessions expire after 24 hours of inactivity or when you sign out. xwall does not store your Google refresh token. Your playlist list is fetched when you open the app and is not saved. Public search results are cached in server memory for up to 24 hours, keyed only by the search words, so a repeated search does not need to call YouTube again; the cache is not linked to you.</p>
+      <p><strong>Sharing.</strong> We do not sell, rent or share Google user data with anyone, and do not use it for advertising or to train AI models. It is used only to provide the features listed above.</p>
+      <p>xwall's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
 
-      <h2>How We Use Information</h2>
-      <p>We use your information to authenticate your account, show your saved playlists, and improve app reliability and security.</p>
+      <h2>YouTube API Services</h2>
+      <p>xwall uses YouTube API Services. By using xwall's YouTube features you agree to be bound by the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener noreferrer">YouTube Terms of Service</a>. Google's handling of your data is described in the <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.</p>
+      <p>You can revoke xwall's access to your Google account at any time from your <a href="https://security.google.com/settings/security/permissions" target="_blank" rel="noopener noreferrer">Google security settings</a>. Revoking access immediately stops xwall from using your token; signing out also deletes your session from our server.</p>
 
-      <h2>Third-Party Services</h2>
-      <p>xwall integrates with Google/YouTube and Spotify for authentication and playlist access. Your use of those services is also governed by their own policies.</p>
+      <h2>Spotify Data</h2>
+      <p>If you sign in with Spotify, xwall requests access to your profile, email address, and your private and collaborative playlists. It uses this only to list your playlists and to search Spotify when you press Enter. Spotify data is handled the same way as Google data above: the token stays on our server for the length of your session, and nothing is sold or shared. You can remove xwall's access from your <a href="https://www.spotify.com/account/apps/" target="_blank" rel="noopener noreferrer">Spotify account settings</a>.</p>
+
+      <h2>Usage Analytics</h2>
+      <p>To understand how xwall is used, we record visits and a few in-app events whether or not you are signed in:</p>
+      <ul>
+        <li>a visitor ID made by one-way hashing your IP address together with your browser's user-agent — we do not store your raw IP address;</li>
+        <li>your approximate country and city, looked up from your IP address using ip-api.com;</li>
+        <li>page visits, and actions such as the wallpaper mode, background video or clock style you pick, when you press Enter, and playback error codes;</li>
+        <li>which provider you signed in with, if any.</li>
+      </ul>
+      <p>The clock mode shows local weather. For this we look up the approximate location of your IP address and ask Open-Meteo for the weather at those coordinates, rounded to about 11 km. We do not ask for or use your device's precise location.</p>
+
+      <h2>Cookies and Device Storage</h2>
+      <p>xwall sets one cookie, <code>xws</code>, which keeps you signed in. It is marked HttpOnly, is sent only over HTTPS, and expires after 24 hours of inactivity. Your chosen wallpaper mode and clock style are saved in your browser's local storage so they are remembered next time. The embedded YouTube and Spotify players are provided by those services and may set their own cookies under their own policies.</p>
 
       <h2>Data Retention</h2>
-      <p>We keep account-related data only as long as needed to operate the service or as required by law.</p>
-
-      <h2>Your Choices</h2>
-      <p>You can sign out at any time. You can request deletion of your account data by contacting the support email listed on the OAuth consent screen.</p>
+      <p>Sign-in sessions, including provider access tokens, are deleted when you sign out or after 24 hours of inactivity. Usage analytics are kept to understand long-term use of the service. You can ask us to delete the analytics associated with you using the contact details below.</p>
 
       <h2>Security</h2>
-      <p>We use reasonable technical and organizational safeguards to protect your information.</p>
+      <p>All traffic is encrypted with HTTPS. Access tokens are stored only on the server and never exposed to the browser. The database is not reachable from the internet.</p>
+
+      <h2>Children</h2>
+      <p>xwall is not directed at children under 13 and does not knowingly collect their personal information.</p>
+
+      <h2>Changes</h2>
+      <p>If we change how xwall uses your data, we will update this page and the date at the top.</p>
 
       <h2>Contact</h2>
-      <p>For privacy questions, contact us via the support email shown in our OAuth consent details.</p>
+      <p>For privacy questions, deletion requests or to report a problem, contact us via the support email shown on xwall's Google sign-in consent screen.</p>
     </div>
   </main>
 </body>
