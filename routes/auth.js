@@ -66,9 +66,11 @@ router.get(
   '/google',
   rememberReturnTo,
   passport.authenticate('google', {
+    // Full scope URLs, identical to the three configured in the Google Cloud
+    // Console, so reviewers can match them character for character.
     scope: [
-      'profile',
-      'email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/youtube.readonly',
     ],
     // Offline access makes Google issue a refresh token, so the session can
