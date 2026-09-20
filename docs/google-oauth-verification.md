@@ -8,7 +8,11 @@ Console: Google Cloud Console → **Google Auth Platform** (project: xwall).
 
 ## Status
 
-**Submitted for verification on 18 September 2026.** Under review by Google.
+**Submitted 18 September 2026. Google replied 20 September 2026 asking for a
+better demo video** (the first one did not show every feature using the scope).
+Scope configuration was fine; the app now requests the full scope URLs so they
+match the console character for character. Re-record using the shot list below,
+then reply to Google's email.
 While it is under review, do not change scopes, branding or publishing status —
 Google warns that changes restart or delay the review. Reply to Google's
 emails in the same thread; the Verification Center shows the current state.
@@ -56,13 +60,79 @@ emails in the same thread; the Verification Center shows the current state.
 If the submission is already under review, the form is locked: reply to
 Google's verification email with this text and say it replaces the original.
 
-## Demo video (1–2 minutes, English)
+## Demo video (2–4 minutes, English)
 
-1. Open `https://xwall.co.za` and click the YouTube sign-in button.
-2. On Google's consent screen, show the **address bar** (reviewers look for the
-   `client_id` in the URL) and the permissions listed.
-3. After sign-in, show your playlists loading, pick one, press play.
-4. Type a playlist search, press Enter, show the results.
+Google rejected the first video because it did not demonstrate "the maximum
+extent of the user facing features using the scope". xwall uses
+`youtube.readonly` in **four** places — all four must appear.
+
+**Before recording**
+- Revoke xwall at <https://myaccount.google.com/permissions> so the full
+  consent screen appears, and sign out of xwall.
+- Turn on Do Not Disturb; close unrelated tabs; zoom the page (Cmd +) so text
+  is readable.
+
+**Shot list**
+
+1. **Consent screen, fully readable.** Click sign in with YouTube. On Google's
+   screen: click into the **address bar** and pause so `client_id` is visible;
+   if the permissions are collapsed, click **"Show all services"** and expand
+   the YouTube entry so all three scopes are readable. Then continue.
+2. **Feature 1 — the user's own playlists** (`playlists.list mine=true`).
+   Show the playlists appearing under the input box. Optionally open
+   youtube.com/feed/playlists in another tab to show they are the same ones.
+3. **Feature 2 — playing one.** Pick a playlist, press Enter, press Play, show
+   the track name appearing in the transport bar.
+4. **Feature 3 — searching public playlists** (`search.list`). Back on the home
+   screen, type a search term, press Enter, show the results and pick one.
+5. **Feature 4 — ambient background suggestions** (`search.list` +
+   `videos.list`). Switch between the wallpaper modes and show the video rail
+   filling with 30-minute-plus ambient videos.
+6. **State the read-only point** on screen or aloud: xwall only reads; it never
+   uploads, deletes, likes, comments, subscribes or edits playlists, and
+   `youtube.readonly` is the narrowest YouTube scope that allows listing a
+   user's own playlists (`youtube` and `youtube.force-ssl` both grant write
+   access).
+
+## Reply to Google
+
+Reply **in the same email thread** with the new unlisted video link and a note
+that the scopes now match the console exactly. Draft in `Reply draft` below.
+
+### Reply draft
+
+> Hello,
+>
+> Thank you for the review. I have recorded a new demonstration video that
+> shows the full user-facing functionality of the requested scope:
+> <VIDEO LINK>
+>
+> The video shows, in order: the OAuth consent screen with the client_id
+> visible in the address bar and all requested scopes expanded and readable;
+> the signed-in user's own YouTube playlists being listed
+> (playlists.list, mine=true); playing a selected playlist in the embedded
+> YouTube player; searching public YouTube playlists (search.list); and the
+> ambient background video suggestions (search.list + videos.list). These are
+> every feature in the app that uses youtube.readonly.
+>
+> The app is read-only: it never uploads, deletes, edits, likes, comments on or
+> subscribes to anything in the user's account, so there is no write or delete
+> action to demonstrate in the source account. youtube.readonly is the
+> narrowest YouTube scope that permits listing a user's own playlists; the
+> alternatives (youtube and youtube.force-ssl) additionally grant write access
+> that the app does not need.
+>
+> The scopes requested by the app now match the three configured in the Google
+> Cloud Console exactly:
+> https://www.googleapis.com/auth/userinfo.profile
+> https://www.googleapis.com/auth/userinfo.email
+> https://www.googleapis.com/auth/youtube.readonly
+>
+> The publishing status remains "In Production". Please let me know if anything
+> further is needed.
+>
+> Kind regards,
+> <YOUR NAME>
 
 ## Facts reviewers may ask about
 
